@@ -1,0 +1,273 @@
+## Level setup, spawn scan, new game — WOLFSRC/WL_GAME.C / WL_MAIN.C.
+import paths
+import wl_def
+import wl_types
+import wl_act1
+import wl_act2
+import id_ca
+import id_pm
+import id_graph
+import id_sd
+import id_audio
+from wl_types import Game
+
+pub func load_game(head_path: str, maps_path: str, vswap_path: str) -> Game!:
+    wl_act2.init_states()
+    var game = Game()
+    game.maps = try id_ca.load_maps(head_path, maps_path)
+    errdefer game.maps.close()
+    game.pages = try id_pm.load_vswap(vswap_path)
+    errdefer game.pages.close()
+    game.health = 100
+    game.ammo = wl_def.start_ammo
+    game.lives = 3
+    game.weapon = wl_def.wp_pistol
+    game.bestweapon = wl_def.wp_pistol
+    game.chosenweapon = wl_def.wp_pistol
+    wl_types.fill_trig(&game)
+    game.mode = wl_def.mode_pg13
+    game.mode_tics = 70 * 7
+    game.difficulty = 1
+    game.fade = 10
+    game.menu_cur = 6
+    var s: i64 = 0
+    while s < wl_def.max_scores:
+        game.hs_score[(usize)s] = 10000
+        game.hs_completed[(usize)s] = 1
+        s += 1
+    try setup_level(&game, 0)
+    load_graph_near(&game, head_path)
+    game.mixer = id_sd.load_mixer(&game.pages)
+    load_audio_near(&game, head_path)
+    return game
+
+func load_audio_near(game: Game*, head_path: str):
+    let dir = paths.directory(head_path)
+    if try_audio(game, joined(dir, "AUDIOHED.WL1"), joined(dir, "AUDIOT.WL1")):
+        return
+    if try_audio(game, "AUDIOHED.WL1", "AUDIOT.WL1"):
+        return
+    discard(try_audio(game, "data/AUDIOHED.WL1", "data/AUDIOT.WL1"))
+
+func try_audio(game: Game*, head: str, data: str) -> bool:
+    return load_audio_files(game, head, data) catch failure:
+        discard(failure)
+        recover false
+
+func load_audio_files(game: Game*, head: str, data: str) -> bool!:
+    game.audio = try id_audio.load_audio(head, data)
+    return true
+
+func load_graph_near(game: Game*, head_path: str):
+    let dir = paths.directory(head_path)
+    if try_graph(game, joined(dir, "VGAHEAD.WL1"), joined(dir, "VGAGRAPH.WL1"), joined(dir, "VGADICT.WL1")):
+        return
+    if try_graph(game, "VGAHEAD.WL1", "VGAGRAPH.WL1", "VGADICT.WL1"):
+        return
+    discard(try_graph(game, "data/VGAHEAD.WL1", "data/VGAGRAPH.WL1", "data/VGADICT.WL1"))
+
+func joined(dir: str, name: str) -> str:
+    let text = paths.join(dir, name) catch failure:
+        discard(failure)
+        recover name
+    return text
+
+func try_graph(game: Game*, head: str, graph_path: str, dict: str) -> bool:
+    return load_latch_pics(game, head, graph_path, dict) catch failure:
+        discard(failure)
+        recover false
+
+func load_latch_pics(game: Game*, head: str, graph_path: str, dict: str) -> bool!:
+    game.graph = try id_graph.load_graph(head, graph_path, dict)
+    game.statusbar = try game.graph.cache_gr_chunk(wl_def.status_bar_pic)
+    var chunk = wl_def.latch_pics_start
+    while chunk <= wl_def.latch_pics_end:
+        let index = chunk - wl_def.latch_pics_start
+        game.latch[(usize)index] = game.graph.cache_gr_chunk(chunk) catch failure:
+            discard(failure)
+            recover id_graph.Pic()
+        chunk += 1
+    return true
+
+## WL_GAME.C SetupGameLevel
+pub func setup_level(game: Game*, mapon: i64) -> !:
+    try id_ca.cache_map(&game.maps, mapon)
+    game.mapon = mapon
+    game.actor_count = 0
+    game.door_count = 0
+    game.static_count = 0
+    game.killcount = 0
+    game.killtotal = 0
+    game.secretcount = 0
+    game.secrettotal = 0
+    game.won = false
+    game.dead = false
+    game.attackframe = 0
+    game.attackcount = 0
+    game.pwallstate = 0
+    game.pwallpos = 0
+    game.playstate = 0
+    game.gatling_face = 0
+    game.dead_tics = 0
+    game.treasurecount = 0
+    game.treasuretotal = 0
+    game.time_tics = 0
+    for i in 0..<4096:
+        game.spotvis[i] = 0
+        game.tilemap[i] = 0
+        game.actorat[i] = 0
+    for y in 0..<wl_def.map_size:
+        for x in 0..<wl_def.map_size:
+            let wall = game.maps.walls[wl_def.plane_cell(x, y)]
+            let dest = wl_def.cell(x, y)
+            if wall < wl_def.area_tile:
+                game.tilemap[dest] = (u8)wall
+                game.actorat[dest] = wall
+            else:
+                game.tilemap[dest] = 0
+                game.actorat[dest] = 0
+    for y in 0..<wl_def.map_size:
+        for x in 0..<wl_def.map_size:
+            let wall = game.maps.walls[wl_def.plane_cell(x, y)]
+            if wall >= 90 and wall <= 101:
+                if wall % 2 == 0:
+                    wl_act1.spawn_door(game, x, y, true, ((i64)wall - 90) // 2)
+                else:
+                    wl_act1.spawn_door(game, x, y, false, ((i64)wall - 91) // 2)
+    scan_info(game)
+
+## WL_GAME.C ScanInfoPlane
+func scan_info(game: Game*):
+    for y in 0..<wl_def.map_size:
+        for x in 0..<wl_def.map_size:
+            let tile = game.maps.info[wl_def.plane_cell(x, y)]
+            if tile == 0:
+                continue
+            if tile >= 19 and tile <= 22:
+                spawn_player(game, x, y, wl_def.north + (i64)tile - 19)
+            elif tile >= 23 and tile <= 72:
+                wl_act1.spawn_static(game, x, y, (i64)tile - 23)
+            elif tile == 98:
+                game.secrettotal += 1
+            elif tile == 124:
+                wl_act2.spawn_dead_guard(game, x, y)
+            elif tile >= 108 and tile <= 111:
+                wl_act2.spawn_enemy(game, wl_def.class_guard, x, y, (i64)tile - 108, false)
+            elif tile >= 112 and tile <= 115:
+                wl_act2.spawn_enemy(game, wl_def.class_guard, x, y, (i64)tile - 112, true)
+            elif tile >= 116 and tile <= 119:
+                wl_act2.spawn_enemy(game, wl_def.class_officer, x, y, (i64)tile - 116, false)
+            elif tile >= 120 and tile <= 123:
+                wl_act2.spawn_enemy(game, wl_def.class_officer, x, y, (i64)tile - 120, true)
+            elif tile >= 126 and tile <= 129:
+                wl_act2.spawn_enemy(game, wl_def.class_ss, x, y, (i64)tile - 126, false)
+            elif tile >= 130 and tile <= 133:
+                wl_act2.spawn_enemy(game, wl_def.class_ss, x, y, (i64)tile - 130, true)
+            elif tile >= 134 and tile <= 137:
+                wl_act2.spawn_enemy(game, wl_def.class_dog, x, y, (i64)tile - 134, false)
+            elif tile >= 138 and tile <= 141:
+                wl_act2.spawn_enemy(game, wl_def.class_dog, x, y, (i64)tile - 138, true)
+            elif tile == 214:
+                ## WL_ACT2.C SpawnBoss: dir = south
+                wl_act2.spawn_enemy(game, wl_def.class_hans, x, y, 3, false)
+            elif tile >= 216 and tile <= 219:
+                wl_act2.spawn_enemy(game, wl_def.class_mutant, x, y, (i64)tile - 216, false)
+            elif tile >= 220 and tile <= 223:
+                wl_act2.spawn_enemy(game, wl_def.class_mutant, x, y, (i64)tile - 220, true)
+    clear_ambush(game)
+
+func clear_ambush(game: Game*):
+    for y in 0..<wl_def.map_size:
+        for x in 0..<wl_def.map_size:
+            if game.maps.walls[wl_def.plane_cell(x, y)] == wl_def.ambush_tile:
+                game.tilemap[wl_def.cell(x, y)] = 0
+                if game.actorat[wl_def.cell(x, y)] < 256:
+                    game.actorat[wl_def.cell(x, y)] = 0
+
+func spawn_player(game: Game*, x: i64, y: i64, dir: i64):
+    game.player.tilex = x
+    game.player.tiley = y
+    game.player.x = (x << wl_def.tile_shift) + wl_def.tile_global // 2
+    game.player.y = (y << wl_def.tile_shift) + wl_def.tile_global // 2
+    game.player.angle = (1 - dir) * 90
+    if game.player.angle < 0:
+        game.player.angle += wl_def.angles
+    game.player.flags = wl_def.fl_nevermark
+    game.player.active = true
+
+pub func revive(game: Game*):
+    game.dead = false
+    game.health = 100
+    game.ammo = wl_def.start_ammo
+    game.keys = 0
+    game.weapon = wl_def.wp_pistol
+    game.bestweapon = wl_def.wp_pistol
+    game.chosenweapon = wl_def.wp_pistol
+    game.attacking = false
+    game.attackframe = 0
+    game.weaponframe = 0
+    game.gatling_face = 0
+    setup_level(game, game.mapon) catch failure:
+        discard(failure)
+        game.dead = true
+
+## WL_GAME.C songs[] / StartMusic for floor
+pub func floor_song(mapon: i64) -> i64:
+    if mapon == 8:
+        return wl_def.mus_warmarch
+    if mapon == 9:
+        return wl_def.mus_corner
+    let cycle = mapon % 4
+    if cycle == 0:
+        return wl_def.mus_getthem
+    if cycle == 1:
+        return wl_def.mus_searchn
+    if cycle == 2:
+        return wl_def.mus_pow
+    return wl_def.mus_suspense
+
+pub func finish_level(game: Game*):
+    game.keys = 0
+    var next = game.mapon + 1
+    if game.playstate == 2:
+        next = 9
+    elif game.mapon == 8:
+        game.mode = wl_def.mode_victory
+        game.mode_tics = 0
+        game.playstate = 3
+        id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_urahero)
+        return
+    elif game.mapon == 9:
+        next = 1
+    game.playstate = 0
+    setup_level(game, next) catch failure:
+        discard(failure)
+        game.mode = wl_def.mode_victory
+        return
+    game.mode = wl_def.mode_psyched
+    game.mode_tics = 0
+    id_sd.start_music(&game.mixer, &game.audio, floor_song(game.mapon))
+
+## WL_MAIN.C NewGame
+pub func new_game(game: Game*, difficulty: i64):
+    game.difficulty = difficulty
+    game.health = 100
+    game.ammo = wl_def.start_ammo
+    game.lives = 3
+    game.score = 0
+    game.keys = 0
+    game.weapon = wl_def.wp_pistol
+    game.bestweapon = wl_def.wp_pistol
+    game.chosenweapon = wl_def.wp_pistol
+    game.dead = false
+    game.won = false
+    game.ingame = true
+    game.attacking = false
+    game.attackframe = 0
+    game.weaponframe = 0
+    game.ammo = wl_def.start_ammo
+    setup_level(game, 0) catch failure:
+        discard(failure)
+    game.mode = wl_def.mode_psyched
+    game.mode_tics = 0
+    id_sd.start_music(&game.mixer, &game.audio, floor_song(0))

@@ -1,0 +1,417 @@
+## Tile movement, sight, NewState — WOLFSRC/WL_STATE.C.
+import math
+import wl_def
+import wl_act1
+import wl_types
+from wl_types import Game, Actor, State
+
+## WL_STATE.C opposite[9]
+func opposite(dir: i64) -> i64:
+    if dir < 0 or dir > 8:
+        return wl_def.nodir
+    let table: i64[9] = [wl_def.west_dir, wl_def.southwest_dir, wl_def.south_dir, wl_def.southeast_dir,
+        wl_def.east_dir, wl_def.northeast_dir, wl_def.north_dir, wl_def.northwest_dir, wl_def.nodir]
+    return table[(usize)dir]
+
+## WL_STATE.C diagonal[dir1][dir2]
+func diagonal(a: i64, b: i64) -> i64:
+    if (a == wl_def.east_dir and b == wl_def.north_dir) or (a == wl_def.north_dir and b == wl_def.east_dir):
+        return wl_def.northeast_dir
+    if (a == wl_def.east_dir and b == wl_def.south_dir) or (a == wl_def.south_dir and b == wl_def.east_dir):
+        return wl_def.southeast_dir
+    if (a == wl_def.west_dir and b == wl_def.north_dir) or (a == wl_def.north_dir and b == wl_def.west_dir):
+        return wl_def.northwest_dir
+    if (a == wl_def.west_dir and b == wl_def.south_dir) or (a == wl_def.south_dir and b == wl_def.west_dir):
+        return wl_def.southwest_dir
+    return wl_def.nodir
+
+## WL_STATE.C NewState — assign state pointer and ticcount (not used by DoActor's next-chain).
+pub func new_state(actor: Actor*, state: State*):
+    actor.state = state
+    actor.ticcount = state.tictime
+    actor.shapenum = state.shapenum
+
+## WL_STATE.C CHECKSIDE — wall blocks, door recorded, shootable actor blocks.
+func check_side(game: Game*, tx: i64, ty: i64) -> (bool, i64):
+    if tx < 1 or ty < 1 or tx >= wl_def.map_size - 1 or ty >= wl_def.map_size - 1:
+        return (false, -1)
+    let mark = game.actorat[wl_def.cell(tx, ty)]
+    if mark == 0:
+        return (true, -1)
+    if mark < 128:
+        return (false, -1)
+    if mark < 256:
+        return (true, (i64)(mark & ~wl_def.bit_door))
+    let index = (i64)mark - 1000
+    if index < 0 or index >= game.actor_count:
+        return (false, -1)
+    if (game.actors[(usize)index].flags & wl_def.fl_shootable) != 0:
+        return (false, -1)
+    return (true, -1)
+
+## WL_STATE.C CHECKDIAG — any map object <256 blocks (including doors).
+func check_diag(game: Game*, tx: i64, ty: i64) -> bool:
+    if tx < 1 or ty < 1 or tx >= wl_def.map_size - 1 or ty >= wl_def.map_size - 1:
+        return false
+    let mark = game.actorat[wl_def.cell(tx, ty)]
+    if mark == 0:
+        return true
+    if mark < 256:
+        return false
+    let index = (i64)mark - 1000
+    if index < 0 or index >= game.actor_count:
+        return false
+    if (game.actors[(usize)index].flags & wl_def.fl_shootable) != 0:
+        return false
+    return true
+
+## WL_STATE.C TryWalk. Dogs use CHECKDIAG on cardinals (they do not open doors).
+pub func try_walk(game: Game*, actor: Actor*) -> bool:
+    var tx = actor.tilex
+    var ty = actor.tiley
+    var doornum: i64 = -1
+    let dog = actor.class == wl_def.class_dog
+    if actor.dir == wl_def.east_dir:
+        if dog:
+            if not check_diag(game, tx + 1, ty):
+                return false
+        else:
+            let (ok, door) = check_side(game, tx + 1, ty)
+            if not ok:
+                return false
+            doornum = door
+        tx += 1
+    elif actor.dir == wl_def.northeast_dir:
+        if not check_diag(game, tx + 1, ty - 1) or not check_diag(game, tx + 1, ty) or not check_diag(game, tx, ty - 1):
+            return false
+        tx += 1
+        ty -= 1
+    elif actor.dir == wl_def.north_dir:
+        if dog:
+            if not check_diag(game, tx, ty - 1):
+                return false
+        else:
+            let (ok, door) = check_side(game, tx, ty - 1)
+            if not ok:
+                return false
+            doornum = door
+        ty -= 1
+    elif actor.dir == wl_def.northwest_dir:
+        if not check_diag(game, tx - 1, ty - 1) or not check_diag(game, tx - 1, ty) or not check_diag(game, tx, ty - 1):
+            return false
+        tx -= 1
+        ty -= 1
+    elif actor.dir == wl_def.west_dir:
+        if dog:
+            if not check_diag(game, tx - 1, ty):
+                return false
+        else:
+            let (ok, door) = check_side(game, tx - 1, ty)
+            if not ok:
+                return false
+            doornum = door
+        tx -= 1
+    elif actor.dir == wl_def.southwest_dir:
+        if not check_diag(game, tx - 1, ty + 1) or not check_diag(game, tx - 1, ty) or not check_diag(game, tx, ty + 1):
+            return false
+        tx -= 1
+        ty += 1
+    elif actor.dir == wl_def.south_dir:
+        if dog:
+            if not check_diag(game, tx, ty + 1):
+                return false
+        else:
+            let (ok, door) = check_side(game, tx, ty + 1)
+            if not ok:
+                return false
+            doornum = door
+        ty += 1
+    elif actor.dir == wl_def.southeast_dir:
+        if not check_diag(game, tx + 1, ty + 1) or not check_diag(game, tx + 1, ty) or not check_diag(game, tx, ty + 1):
+            return false
+        tx += 1
+        ty += 1
+    else:
+        return false
+    if doornum >= 0:
+        wl_act1.open_door(game, doornum)
+        actor.distance = 0 - doornum - 1
+        return true
+    actor.tilex = tx
+    actor.tiley = ty
+    actor.distance = wl_def.tile_global
+    return true
+
+## WL_STATE.C MoveObj
+pub func move_obj(game: Game*, actor: Actor*, move: i64):
+    var nx = actor.x
+    var ny = actor.y
+    if actor.dir == wl_def.east_dir:
+        nx += move
+    elif actor.dir == wl_def.northeast_dir:
+        nx += move
+        ny -= move
+    elif actor.dir == wl_def.north_dir:
+        ny -= move
+    elif actor.dir == wl_def.northwest_dir:
+        nx -= move
+        ny -= move
+    elif actor.dir == wl_def.west_dir:
+        nx -= move
+    elif actor.dir == wl_def.southwest_dir:
+        nx -= move
+        ny += move
+    elif actor.dir == wl_def.south_dir:
+        ny += move
+    elif actor.dir == wl_def.southeast_dir:
+        nx += move
+        ny += move
+    else:
+        return
+    var dx = nx - game.player.x
+    if dx < 0:
+        dx = 0 - dx
+    var dy = ny - game.player.y
+    if dy < 0:
+        dy = 0 - dy
+    if dx <= wl_def.min_actor_dist and dy <= wl_def.min_actor_dist:
+        return
+    actor.x = nx
+    actor.y = ny
+    actor.distance -= move
+
+## WL_STATE.C SelectChaseDir
+pub func select_chase_dir(game: Game*, actor: Actor*):
+    let olddir = actor.dir
+    var turnaround = opposite(olddir)
+    if olddir == wl_def.nodir:
+        turnaround = wl_def.nodir
+    let deltax = game.player.tilex - actor.tilex
+    let deltay = game.player.tiley - actor.tiley
+    var d1 = wl_def.nodir
+    var d2 = wl_def.nodir
+    if deltax > 0:
+        d1 = wl_def.east_dir
+    elif deltax < 0:
+        d1 = wl_def.west_dir
+    if deltay > 0:
+        d2 = wl_def.south_dir
+    elif deltay < 0:
+        d2 = wl_def.north_dir
+    if math.iabs(deltay) > math.iabs(deltax):
+        let t = d1
+        d1 = d2
+        d2 = t
+    if d1 == turnaround:
+        d1 = wl_def.nodir
+    if d2 == turnaround:
+        d2 = wl_def.nodir
+    if d1 != wl_def.nodir:
+        actor.dir = d1
+        if try_walk(game, actor):
+            return
+    if d2 != wl_def.nodir:
+        actor.dir = d2
+        if try_walk(game, actor):
+            return
+    if olddir != wl_def.nodir:
+        actor.dir = olddir
+        if try_walk(game, actor):
+            return
+    ## Original loops tdir from north..west (2..4) or west..north. Cardinals 0,2,4,6 are the
+    ## useful set; keep that search so blocked actors still find a side step.
+    if wl_types.us_rnd_t(game) > 128:
+        var tdir = wl_def.north_dir
+        while tdir <= wl_def.west_dir:
+            if tdir != turnaround:
+                actor.dir = tdir
+                if try_walk(game, actor):
+                    return
+            tdir += 1
+    else:
+        var tdir = wl_def.west_dir
+        while tdir >= wl_def.north_dir:
+            if tdir != turnaround:
+                actor.dir = tdir
+                if try_walk(game, actor):
+                    return
+            tdir -= 1
+    if turnaround != wl_def.nodir:
+        actor.dir = turnaround
+        if try_walk(game, actor):
+            return
+    actor.dir = wl_def.nodir
+
+## WL_STATE.C SelectDodgeDir
+pub func select_dodge_dir(game: Game*, actor: Actor*):
+    var turnaround = opposite(actor.dir)
+    if (actor.flags & wl_def.fl_firstattack) != 0:
+        turnaround = wl_def.nodir
+        actor.flags = actor.flags & ~wl_def.fl_firstattack
+    let deltax = game.player.tilex - actor.tilex
+    let deltay = game.player.tiley - actor.tiley
+    var d1 = wl_def.east_dir
+    var d3 = wl_def.west_dir
+    if deltax <= 0:
+        d1 = wl_def.west_dir
+        d3 = wl_def.east_dir
+    var d2 = wl_def.south_dir
+    var d4 = wl_def.north_dir
+    if deltay <= 0:
+        d2 = wl_def.north_dir
+        d4 = wl_def.south_dir
+    if math.iabs(deltax) < math.iabs(deltay):
+        let t1 = d1
+        d1 = d2
+        d2 = t1
+        let t3 = d3
+        d3 = d4
+        d4 = t3
+    if wl_types.us_rnd_t(game) < 128:
+        let t1 = d1
+        d1 = d2
+        d2 = t1
+        let t3 = d3
+        d3 = d4
+        d4 = t3
+    var dirs: i64[5]
+    dirs[0] = diagonal(d1, d2)
+    dirs[1] = d1
+    dirs[2] = d2
+    dirs[3] = d3
+    dirs[4] = d4
+    var i: i64 = 0
+    while i < 5:
+        if dirs[(usize)i] != wl_def.nodir and dirs[(usize)i] != turnaround:
+            actor.dir = dirs[(usize)i]
+            if try_walk(game, actor):
+                return
+        i += 1
+    if turnaround != wl_def.nodir:
+        actor.dir = turnaround
+        if try_walk(game, actor):
+            return
+    actor.dir = wl_def.nodir
+
+## WL_STATE.C SelectPathDir — info-plane arrow tiles 90..97.
+pub func select_path_dir(game: Game*, actor: Actor*):
+    let info = game.maps.info[wl_def.plane_cell(actor.tilex, actor.tiley)]
+    if info >= 90 and info <= 97:
+        actor.dir = (i64)info - 90
+    actor.distance = wl_def.tile_global
+    if not try_walk(game, actor):
+        actor.dir = wl_def.nodir
+
+## WL_STATE.C CheckLine — 1/256 tile intercepts vs door.position
+pub func check_line(game: Game*, x: i64, y: i64) -> bool:
+    let x1 = x >> wl_def.unsigned_shift
+    let y1 = y >> wl_def.unsigned_shift
+    var xt1 = x1 >> 8
+    var yt1 = y1 >> 8
+    let x2 = game.player.x >> wl_def.unsigned_shift
+    let y2 = game.player.y >> wl_def.unsigned_shift
+    var xt2 = game.player.tilex
+    var yt2 = game.player.tiley
+    let xdist = math.iabs(xt2 - xt1)
+    if xdist > 0:
+        var partial: i64 = 0
+        var xstep: i64 = 0
+        if xt2 > xt1:
+            partial = 256 - (x1 & 0xff)
+            xstep = 1
+        else:
+            partial = x1 & 0xff
+            xstep = -1
+        let deltafrac = math.iabs(x2 - x1)
+        if deltafrac == 0:
+            return false
+        var ltemp = ((y2 - y1) << 8) // deltafrac
+        if ltemp > 0x7fff:
+            ltemp = 0x7fff
+        if ltemp < -0x7fff:
+            ltemp = -0x7fff
+        let ystep = ltemp
+        var yfrac = y1 + ((ystep * partial) >> 8)
+        var xv = xt1 + xstep
+        xt2 += xstep
+        var steps: i64 = 0
+        while xv != xt2 and steps < 64:
+            steps += 1
+            let yv = yfrac >> 8
+            yfrac += ystep
+            if xv < 0 or xv >= wl_def.map_size or yv < 0 or yv >= wl_def.map_size:
+                return false
+            let value = game.tilemap[wl_def.cell(xv, yv)]
+            xv += xstep
+            if value == 0:
+                continue
+            if value < wl_def.bit_door or value > wl_def.bit_all_tiles:
+                return false
+            let door = (i64)(value & ~wl_def.bit_door)
+            if door < 0 or door >= game.door_count:
+                return false
+            let intercept = yfrac - ystep // 2
+            if intercept > game.doors[(usize)door].position:
+                return false
+        if xv != xt2:
+            return false
+    let ydist = math.iabs(yt2 - yt1)
+    if ydist > 0:
+        var partial: i64 = 0
+        var ystep: i64 = 0
+        if yt2 > yt1:
+            partial = 256 - (y1 & 0xff)
+            ystep = 1
+        else:
+            partial = y1 & 0xff
+            ystep = -1
+        let deltafrac = math.iabs(y2 - y1)
+        if deltafrac == 0:
+            return false
+        var ltemp = ((x2 - x1) << 8) // deltafrac
+        if ltemp > 0x7fff:
+            ltemp = 0x7fff
+        if ltemp < -0x7fff:
+            ltemp = -0x7fff
+        let xstep = ltemp
+        var xfrac = x1 + ((xstep * partial) >> 8)
+        var yv = yt1 + ystep
+        yt2 += ystep
+        var steps: i64 = 0
+        while yv != yt2 and steps < 64:
+            steps += 1
+            let xv = xfrac >> 8
+            xfrac += xstep
+            if xv < 0 or xv >= wl_def.map_size or yv < 0 or yv >= wl_def.map_size:
+                return false
+            let value = game.tilemap[wl_def.cell(xv, yv)]
+            yv += ystep
+            if value == 0:
+                continue
+            if value < wl_def.bit_door or value > wl_def.bit_all_tiles:
+                return false
+            let door = (i64)(value & ~wl_def.bit_door)
+            if door < 0 or door >= game.door_count:
+                return false
+            let intercept = xfrac - xstep // 2
+            if intercept > game.doors[(usize)door].position:
+                return false
+        if yv != yt2:
+            return false
+    return true
+
+## WL_STATE.C CheckSight
+pub func check_sight(game: Game*, actor: Actor*) -> bool:
+    let dx = game.player.x - actor.x
+    let dy = game.player.y - actor.y
+    if dx > -0x18000 and dx < 0x18000 and dy > -0x18000 and dy < 0x18000:
+        return true
+    if actor.dir == wl_def.north_dir and dy > 0:
+        return false
+    if actor.dir == wl_def.east_dir and dx < 0:
+        return false
+    if actor.dir == wl_def.south_dir and dy < 0:
+        return false
+    if actor.dir == wl_def.west_dir and dx > 0:
+        return false
+    return check_line(game, actor.x, actor.y)

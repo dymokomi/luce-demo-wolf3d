@@ -1,0 +1,98 @@
+## Page manager from WOLFSRC/ID_PM.C: the VSWAP wall, sprite and sound pages.
+import c
+import files
+import memory
+import wl_def
+
+pub struct Pages:
+    pub var chunks: u16
+    pub var sprite_start: u16
+    pub var sound_start: u16
+    var data: u8[]
+    var offsets: u32[]
+    var lengths: u16[]
+
+    pub mutating func close():
+        if self.data.length > 0:
+            free(self.data) in memory.heap
+        if self.offsets.length > 0:
+            free(self.offsets) in memory.heap
+        if self.lengths.length > 0:
+            free(self.lengths) in memory.heap
+        var empty_u8: u8[]
+        var empty_u32: u32[]
+        var empty_u16: u16[]
+        self.data = empty_u8
+        self.offsets = empty_u32
+        self.lengths = empty_u16
+
+    pub func wall(pic: i64) -> const u8[]!:
+        return try self.page(pic)
+
+    pub func sprite(shape: i64) -> const u8[]!:
+        return try self.page((i64)self.sprite_start + shape)
+
+    pub func door_wall() -> i64:
+        return (i64)self.sprite_start - 8
+
+    pub func sound_page(index: i64) -> const u8[]!:
+        return try self.page((i64)self.sound_start + index)
+
+    pub func last_page() -> const u8[]!:
+        return try self.page((i64)self.chunks - 1)
+
+    func page(index: i64) -> const u8[]!:
+        if index < 0 or index >= (i64)self.chunks:
+            error(wl_def.invalid, "VSWAP page is out of range")
+        let start = self.offsets[(usize)index]
+        if start == 0:
+            error(wl_def.invalid, "VSWAP page is sparse")
+        var end: u32 = 0
+        var next = (i64)index + 1
+        while next < (i64)self.chunks:
+            let off = self.offsets[(usize)next]
+            if off != 0:
+                end = off
+                break
+            next += 1
+        if end <= start:
+            end = start + (u32)self.lengths[(usize)index]
+            if end == start:
+                end = (u32)self.data.length
+        let a = (usize)start
+        var b = (usize)end
+        if b > self.data.length:
+            b = self.data.length
+        if a >= b:
+            error(wl_def.invalid, "VSWAP page has no bytes")
+        return self.data[a..<b]
+
+pub func load_vswap(path: str) -> Pages!:
+    let raw = try files.read((c.str)path)
+    errdefer free(raw) in memory.heap
+    if raw.length < 6:
+        error(wl_def.invalid, "VSWAP is truncated")
+    var pages = Pages()
+    pages.chunks = wl_def.u16le(raw, 0)
+    pages.sprite_start = wl_def.u16le(raw, 2)
+    pages.sound_start = wl_def.u16le(raw, 4)
+    let count = (usize)pages.chunks
+    if raw.length < 6 + count * 4 + count * 2:
+        error(wl_def.invalid, "VSWAP header is truncated")
+    let offs = try alloc u32[count] in memory.heap
+    errdefer free(offs) in memory.heap
+    let lens = try alloc u16[count] in memory.heap
+    errdefer free(lens) in memory.heap
+    var i: usize = 0
+    while i < count:
+        offs[i] = wl_def.u32le(raw, 6 + i * 4)
+        i += 1
+    let len_base = 6 + count * 4
+    i = 0
+    while i < count:
+        lens[i] = wl_def.u16le(raw, len_base + i * 2)
+        i += 1
+    pages.offsets = offs
+    pages.lengths = lens
+    pages.data = raw
+    return pages

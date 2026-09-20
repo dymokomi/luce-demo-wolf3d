@@ -1,0 +1,373 @@
+## Player movement, weapons, pickups — WOLFSRC/WL_AGENT.C.
+import wl_def
+import wl_act1
+import wl_act2
+import wl_state
+import wl_types
+from wl_types import Game, Buttons
+
+## WL_AGENT.C ControlMovement + WL_PLAY.C PollKeyboardMove
+pub func control_movement(game: Game*, buttons: Buttons):
+    let tics = game.tics
+    var ob = &game.player
+    let delta = (wl_def.run_move if buttons.run else wl_def.base_move) * tics
+    var controlx: i64 = 0
+    var controly: i64 = 0
+    if buttons.forward:
+        controly -= delta
+    if buttons.back:
+        controly += delta
+    if buttons.turn_left or buttons.left:
+        controlx -= delta
+    if buttons.turn_right or buttons.right:
+        controlx += delta
+    if buttons.strafe:
+        if controlx > 0:
+            var a = ob.angle - wl_def.angles // 4
+            if a < 0:
+                a += wl_def.angles
+            thrust(game, a, controlx * wl_def.move_scale)
+        elif controlx < 0:
+            var a = ob.angle + wl_def.angles // 4
+            if a >= wl_def.angles:
+                a -= wl_def.angles
+            thrust(game, a, (0 - controlx) * wl_def.move_scale)
+    else:
+        game.anglefrac += controlx
+        let angleunits = game.anglefrac // wl_def.angle_scale
+        game.anglefrac -= angleunits * wl_def.angle_scale
+        ob.angle -= angleunits
+        if ob.angle >= wl_def.angles:
+            ob.angle -= wl_def.angles
+        if ob.angle < 0:
+            ob.angle += wl_def.angles
+    if controly < 0:
+        thrust(game, ob.angle, (0 - controly) * wl_def.move_scale)
+    elif controly > 0:
+        var a = ob.angle + wl_def.angles // 2
+        if a >= wl_def.angles:
+            a -= wl_def.angles
+        thrust(game, a, controly * wl_def.back_move_scale)
+
+## WL_AGENT.C Thrust / ClipMove / TryMove
+func thrust(game: Game*, angle: i64, speed: i64):
+    var sp = speed
+    if sp >= wl_def.min_dist * 2:
+        sp = wl_def.min_dist * 2 - 1
+    let c = wl_types.table_cos(game, angle)
+    let s = wl_types.table_sin(game, angle)
+    let xmove = wl_def.fixed_mul(sp, c)
+    let ymove = 0 - wl_def.fixed_mul(sp, s)
+    clip_move(game, xmove, ymove)
+    game.player.tilex = game.player.x >> wl_def.tile_shift
+    game.player.tiley = game.player.y >> wl_def.tile_shift
+
+func clip_move(game: Game*, xmove: i64, ymove: i64):
+    let basex = game.player.x
+    let basey = game.player.y
+    game.player.x = basex + xmove
+    game.player.y = basey + ymove
+    if try_move(game):
+        return
+    game.player.x = basex + xmove
+    game.player.y = basey
+    if try_move(game):
+        return
+    game.player.x = basex
+    game.player.y = basey + ymove
+    if try_move(game):
+        return
+    game.player.x = basex
+    game.player.y = basey
+
+func try_move(game: Game*) -> bool:
+    let r = wl_def.min_dist
+    let xl = (game.player.x - r) >> wl_def.tile_shift
+    let xh = (game.player.x + r) >> wl_def.tile_shift
+    let yl = (game.player.y - r) >> wl_def.tile_shift
+    let yh = (game.player.y + r) >> wl_def.tile_shift
+    if xl < 0 or yl < 0 or xh >= wl_def.map_size or yh >= wl_def.map_size:
+        return false
+    for y in yl..<(yh + 1):
+        for x in xl..<(xh + 1):
+            let mark = game.actorat[wl_def.cell(x, y)]
+            if mark != 0:
+                return false
+    return true
+
+## WL_AGENT.C Cmd_Use
+pub func cmd_use(game: Game*):
+    var checkx = game.player.tilex
+    var checky = game.player.tiley
+    var dir = wl_def.east
+    var elevatorok = true
+    if game.player.angle < wl_def.angles // 8 or game.player.angle > 7 * wl_def.angles // 8:
+        checkx += 1
+        dir = wl_def.east
+        elevatorok = true
+    elif game.player.angle < 3 * wl_def.angles // 8:
+        checky -= 1
+        dir = wl_def.north
+        elevatorok = false
+    elif game.player.angle < 5 * wl_def.angles // 8:
+        checkx -= 1
+        dir = wl_def.west
+        elevatorok = true
+    else:
+        checky += 1
+        dir = wl_def.south
+        elevatorok = false
+    if checkx < 0 or checky < 0 or checkx >= wl_def.map_size or checky >= wl_def.map_size:
+        return
+    if game.maps.info[wl_def.plane_cell(checkx, checky)] == wl_def.pushable_tile:
+        wl_act1.push_wall(game, checkx, checky, dir)
+        return
+    let doornum = game.tilemap[wl_def.cell(checkx, checky)]
+    if elevatorok and (i64)doornum == (i64)wl_def.elevator_tile:
+        if game.maps.walls[wl_def.plane_cell(game.player.tilex, game.player.tiley)] == wl_def.alt_elevator_tile:
+            game.playstate = 2
+        else:
+            game.playstate = 1
+        return
+    if (doornum & wl_def.bit_door) != 0:
+        wl_act1.operate_door(game, (i64)(doornum & ~wl_def.bit_door))
+
+## WL_AGENT.C CheckWeaponChange
+pub func check_weapon_change(game: Game*, buttons: Buttons):
+    if game.ammo == 0:
+        return
+    if buttons.ready_knife and game.bestweapon >= wl_def.wp_knife:
+        game.weapon = wl_def.wp_knife
+        game.chosenweapon = wl_def.wp_knife
+        game.weaponframe = 0
+    if buttons.ready_pistol and game.bestweapon >= wl_def.wp_pistol:
+        game.weapon = wl_def.wp_pistol
+        game.chosenweapon = wl_def.wp_pistol
+        game.weaponframe = 0
+    if buttons.ready_machine and game.bestweapon >= wl_def.wp_machinegun:
+        game.weapon = wl_def.wp_machinegun
+        game.chosenweapon = wl_def.wp_machinegun
+        game.weaponframe = 0
+    if buttons.ready_chain and game.bestweapon >= wl_def.wp_chaingun:
+        game.weapon = wl_def.wp_chaingun
+        game.chosenweapon = wl_def.wp_chaingun
+        game.weaponframe = 0
+
+## WL_AGENT.C Cmd_Fire / T_Attack / attackinfo[]
+pub func cmd_fire(game: Game*):
+    game.attacking = true
+    game.attackframe = 0
+    game.attackcount = 6
+    game.weaponframe = 1
+
+func attack_kind(weapon: i64, frame: i64) -> i64:
+    if frame <= 0:
+        return 0
+    if frame == 1:
+        return 2 if weapon == wl_def.wp_knife else 1
+    if frame == 2:
+        if weapon == wl_def.wp_knife or weapon == wl_def.wp_pistol:
+            return 0
+        if weapon == wl_def.wp_machinegun:
+            return 3
+        return 4
+    return -1
+
+pub func t_attack(game: Game*, buttons: Buttons):
+    game.attackcount -= game.tics
+    while game.attackcount <= 0:
+        let kind = attack_kind(game.weapon, game.attackframe)
+        if kind == -1:
+            game.attacking = false
+            game.attackframe = 0
+            game.weaponframe = 0
+            if game.ammo == 0:
+                game.weapon = wl_def.wp_knife
+            elif game.weapon != game.chosenweapon:
+                game.weapon = game.chosenweapon
+            return
+        if kind == 1 or kind == 4:
+            if game.ammo == 0:
+                game.attackframe += 1
+                game.attackcount += 6
+                continue
+            game.madenoise = true
+            if game.weapon == wl_def.wp_chaingun:
+                wl_types.play_sound(game, wl_def.snd_gatling)
+            elif game.weapon == wl_def.wp_machinegun:
+                wl_types.play_sound(game, wl_def.snd_machine)
+            else:
+                wl_types.play_sound(game, wl_def.snd_pistol)
+            gun_attack(game)
+            game.ammo -= 1
+            if kind == 4 and buttons.attack:
+                game.attackframe -= 2
+        elif kind == 2:
+            knife_attack(game)
+        elif kind == 3:
+            if game.ammo != 0 and buttons.attack:
+                game.attackframe -= 2
+        game.attackcount += 6
+        game.attackframe += 1
+        game.weaponframe = game.attackframe + 1
+
+## WL_AGENT.C KnifeAttack
+func knife_attack(game: Game*):
+    var dist: i64 = 0x7fffffff
+    var target: i64 = -1
+    for i in 0..<game.actor_count:
+        let actor = game.actors[(usize)i]
+        if (actor.flags & wl_def.fl_shootable) == 0 or (actor.flags & wl_def.fl_visable) == 0:
+            continue
+        var dx = actor.viewx - wl_def.view_width // 2
+        if dx < 0:
+            dx = 0 - dx
+        if dx >= wl_def.shoot_delta:
+            continue
+        if actor.transx < dist:
+            dist = actor.transx
+            target = i
+    if target < 0 or dist > 0x18000:
+        return
+    wl_act2.damage_actor(game, target, wl_types.us_rnd_t(game) >> 4)
+
+## WL_AGENT.C GunAttack
+func gun_attack(game: Game*):
+    var viewdist: i64 = 0x7fffffff
+    var target: i64 = -1
+    for i in 0..<game.actor_count:
+        let actor = game.actors[(usize)i]
+        if (actor.flags & wl_def.fl_shootable) == 0 or (actor.flags & wl_def.fl_visable) == 0:
+            continue
+        var dx = actor.viewx - wl_def.view_width // 2
+        if dx < 0:
+            dx = 0 - dx
+        if dx >= wl_def.shoot_delta:
+            continue
+        if actor.transx < viewdist:
+            viewdist = actor.transx
+            target = i
+    if target < 0:
+        return
+    let actor = game.actors[(usize)target]
+    if not wl_state.check_line(game, actor.x, actor.y):
+        return
+    var tx = actor.tilex - game.player.tilex
+    if tx < 0:
+        tx = 0 - tx
+    var ty = actor.tiley - game.player.tiley
+    if ty < 0:
+        ty = 0 - ty
+    let dist = tx if tx > ty else ty
+    var damage: i64 = 0
+    if dist < 2:
+        damage = wl_types.us_rnd_t(game) // 4
+    elif dist < 4:
+        damage = wl_types.us_rnd_t(game) // 6
+    else:
+        if wl_types.us_rnd_t(game) // 12 < dist:
+            return
+        damage = wl_types.us_rnd_t(game) // 6
+    wl_act2.damage_actor(game, target, damage)
+
+func give_ammo(game: Game*, ammo: i64):
+    if game.ammo == 0 and not game.attacking:
+        game.weapon = game.chosenweapon
+    game.ammo += ammo
+    if game.ammo > 99:
+        game.ammo = 99
+
+func give_weapon(game: Game*, weapon: i64):
+    give_ammo(game, 6)
+    if game.bestweapon < weapon:
+        game.bestweapon = weapon
+        game.weapon = weapon
+        game.chosenweapon = weapon
+    if weapon == wl_def.wp_chaingun:
+        game.gatling_face = 70
+
+func give_key(game: Game*, key: i64):
+    game.keys = game.keys | (1 << key)
+
+## WL_AGENT.C GetBonus
+pub func get_bonus(game: Game*):
+    for i in 0..<game.static_count:
+        let obj = &game.statics[(usize)i]
+        if obj.shapenum < 0 or (obj.flags & wl_def.fl_bonus) == 0:
+            continue
+        if obj.tilex != game.player.tilex or obj.tiley != game.player.tiley:
+            continue
+        let item = (i64)obj.item
+        if item == wl_def.bo_firstaid:
+            if game.health == 100:
+                continue
+            wl_types.play_sound(game, wl_def.snd_health)
+            game.health += 25
+            if game.health > 100:
+                game.health = 100
+        elif item == wl_def.bo_key1 or item == wl_def.bo_key2:
+            wl_types.play_sound(game, wl_def.snd_keys)
+            give_key(game, item - wl_def.bo_key1)
+        elif item == wl_def.bo_clip:
+            if game.ammo == 99:
+                continue
+            wl_types.play_sound(game, wl_def.snd_ammo)
+            give_ammo(game, 8)
+        elif item == wl_def.bo_clip2:
+            if game.ammo == 99:
+                continue
+            wl_types.play_sound(game, wl_def.snd_ammo)
+            give_ammo(game, 4)
+        elif item == wl_def.bo_machinegun:
+            give_weapon(game, wl_def.wp_machinegun)
+        elif item == wl_def.bo_chaingun:
+            give_weapon(game, wl_def.wp_chaingun)
+        elif item == wl_def.bo_food:
+            if game.health == 100:
+                continue
+            game.health += 10
+            if game.health > 100:
+                game.health = 100
+        elif item == wl_def.bo_alpo:
+            if game.health == 100:
+                continue
+            game.health += 4
+            if game.health > 100:
+                game.health = 100
+        elif item == wl_def.bo_gibs:
+            if game.health > 10:
+                continue
+            game.health += 1
+        elif item == wl_def.bo_fullheal:
+            game.health = 100
+            give_ammo(game, 25)
+            if game.lives < 9:
+                game.lives += 1
+        elif item == wl_def.bo_cross:
+            game.score += 100
+            game.treasurecount += 1
+        elif item == wl_def.bo_chalice:
+            game.score += 500
+            game.treasurecount += 1
+        elif item == wl_def.bo_bible:
+            game.score += 1000
+            game.treasurecount += 1
+        elif item == wl_def.bo_crown:
+            game.score += 5000
+            game.treasurecount += 1
+        else:
+            continue
+        obj.shapenum = -1
+
+## WL_AGENT.C StatusDrawFace random blink
+pub func update_face(game: Game*):
+    if game.gatling_face > 0:
+        game.gatling_face -= game.tics
+        if game.gatling_face < 0:
+            game.gatling_face = 0
+    game.facecount += game.tics
+    if game.facecount > (wl_types.us_rnd_t(game) >> 3):
+        game.faceframe = wl_types.us_rnd_t(game) >> 6
+        if game.faceframe == 3:
+            game.faceframe = 1
+        game.facecount = 0

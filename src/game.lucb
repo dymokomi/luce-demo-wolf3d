@@ -1,0 +1,185 @@
+## luce-ui widget hosting the Wolf3D play loop.
+import gpu
+import input
+import interop
+import memory
+import ownership
+import ui
+from ui import Widget, Layout, Size, Constraints, Event, Painter, Raster, Font
+import wl_def
+import wl_play
+import wl_draw
+import wl_menu
+import wl_game
+import id_sd
+from wl_types import Game, Buttons
+
+pub struct GameView: Widget:
+    let box: interop.Reference[Layout]
+    var raster: Raster
+    var game: Game
+    var refresh: wl_draw.Refresh
+    var buttons: Buttons
+    let font: interop.Reference[Font]
+
+    pub func init(head_path: str, maps_path: str, vswap_path: str) -> !:
+        let box = try interop.Reference[Layout].adopt(new Layout() in memory.heap, ui.layout_type, memory.heap)
+        errdefer box.release()
+        try box.value().set_limits(Size(320.0, 200.0), Size(16384.0, 16384.0))
+        try box.value().set_flex()
+        box.value().set_focusable(true)
+        box.value().request_focus()
+        var raster = try Raster(wl_def.view_width, wl_def.screen_height)
+        errdefer raster.close()
+        let font = try interop.Reference[Font].adopt(new Font(size = 16.0) in memory.heap, ui.font_type, memory.heap)
+        errdefer font.release()
+        self.box = box
+        self.raster = raster
+        self.game = try wl_game.load_game(head_path, maps_path, vswap_path)
+        self.refresh = wl_draw.Refresh()
+        self.buttons = Buttons()
+        self.font = font
+        wl_menu.tick(&self.game, &self.refresh, self.buttons, 0.0)
+        try wl_draw.present(&self.refresh, &self.raster, self.game.fade)
+
+    pub func layout() -> interop.Reference[Layout]:
+        return self.box.clone()
+
+    pub func measure(available: Constraints) -> interop.Outcome[Size]:
+        discard(available)
+        return interop.Outcome[Size].success(interop.Owned[Size](Size()))
+
+    pub mutating func draw(target: interop.View[gpu.RenderTarget]) -> interop.Outcome[unit]:
+        self.paint(target) catch failure:
+            return fail_unit(failure.code, failure.message)
+        return ok_unit()
+
+    pub mutating func event(event: Event) -> interop.Outcome[unit]:
+        if event.cancelled:
+            self.buttons = Buttons()
+            return ok_unit()
+        if event.kind == input.EventKind.key_down or event.kind == input.EventKind.key_up:
+            apply_key(&self.buttons, event.key, event.kind == input.EventKind.key_down, event.repeated)
+        elif event.kind == input.EventKind.modifiers_changed:
+            apply_modifiers(&self.buttons, event)
+        elif event.kind == input.EventKind.text_input and event.codepoint == 32:
+            self.buttons.use = true
+            self.buttons.use_edge = true
+        elif event.kind == input.EventKind.pointer_down and event.button == 0:
+            if self.game.mode == wl_def.mode_game:
+                if not self.buttons.attack:
+                    self.buttons.attack_edge = true
+                self.buttons.attack = true
+        elif event.kind == input.EventKind.pointer_up and event.button == 0:
+            self.buttons.attack = false
+        return ok_unit()
+
+    pub mutating func tick(elapsed: f64) -> !:
+        if self.game.mode == wl_def.mode_game:
+            if self.buttons.escape_edge:
+                self.game.mode = wl_def.mode_menu
+                self.game.ingame = true
+                self.game.menu_cur = 0
+                self.game.fade = 0
+                id_sd.start_music(&self.game.mixer, &self.game.audio, wl_def.mus_wonderin)
+            elif self.buttons.pause:
+                self.game.mode = wl_def.mode_pause
+                self.game.fade = 10
+            else:
+                wl_play.simulate(&self.game, self.buttons, elapsed)
+        if self.game.mode == wl_def.mode_game:
+            try wl_draw.three_d_refresh(&self.game, &self.refresh, &self.raster)
+        else:
+            wl_menu.tick(&self.game, &self.refresh, self.buttons, elapsed)
+            try wl_draw.present(&self.refresh, &self.raster, self.game.fade)
+        self.buttons.attack_edge = false
+        self.buttons.use_edge = false
+        self.buttons.enter_edge = false
+        self.buttons.escape_edge = false
+        self.buttons.any_key = false
+        self.buttons.pause = false
+        self.box.value().invalidate()
+
+    func paint(target: interop.View[gpu.RenderTarget]) -> !:
+        var painter = try Painter(target)
+        defer painter.close()
+        let size = try target.get().size()
+        try painter.rectangle(gpu.Rect(width = size.width, height = size.height), gpu.Color())
+        try self.raster.draw(target, gpu.Rect(width = size.width, height = size.height))
+
+    pub mutating func close():
+        self.game.close()
+        self.font.release()
+        self.raster.close()
+        self.box.release()
+
+    func trace(visit: func(ownership.Object*, void*) -> unit, context: void*):
+        self.box.trace(visit, context)
+        self.font.trace(visit, context)
+
+    pub func wants_quit() -> bool:
+        return self.game.want_quit
+
+pub let game_view_type: interop.Type[GameView] = interop.Type[GameView]("Wolf3D view", GameView.close, GameView.trace, closeable = true, main_thread = true)
+
+func apply_modifiers(buttons: Buttons*, event: Event):
+    if event.control and not buttons.attack:
+        buttons.attack_edge = true
+    buttons.attack = event.control
+    buttons.run = event.shift
+    buttons.strafe = event.alt
+
+func apply_key(buttons: Buttons*, key: input.Key, down: bool, repeated: bool):
+    if down:
+        buttons.any_key = true
+    if key == input.Key.w or key == input.Key.up:
+        buttons.forward = down
+    elif key == input.Key.s or key == input.Key.down:
+        buttons.back = down
+    elif key == input.Key.a or key == input.Key.left:
+        buttons.turn_left = down
+    elif key == input.Key.d or key == input.Key.right:
+        buttons.turn_right = down
+    elif key == input.Key.left_shift or key == input.Key.right_shift:
+        buttons.run = down
+    elif key == input.Key.left_alt or key == input.Key.right_alt:
+        buttons.strafe = down
+    elif key == input.Key.left_control or key == input.Key.right_control:
+        if down and not buttons.attack:
+            buttons.attack_edge = true
+        buttons.attack = down
+    elif key == input.Key.space:
+        if down and not buttons.use:
+            buttons.use_edge = true
+        buttons.use = down
+    elif key == input.Key.digit_1:
+        buttons.ready_knife = down
+    elif key == input.Key.digit_2:
+        buttons.ready_pistol = down
+    elif key == input.Key.digit_3:
+        buttons.ready_machine = down
+    elif key == input.Key.digit_4:
+        buttons.ready_chain = down
+    elif key == input.Key.enter:
+        if down and not buttons.enter:
+            buttons.enter_edge = true
+        buttons.enter = down
+    elif key == input.Key.escape:
+        if down and not buttons.escape:
+            buttons.escape_edge = true
+        buttons.escape = down
+    elif key == input.Key.p:
+        if down:
+            buttons.pause = true
+    elif key == input.Key.y:
+        buttons.yes = down
+    elif key == input.Key.n:
+        buttons.no = down
+
+func ok_unit() -> interop.Outcome[unit]:
+    return interop.Outcome[unit].success(interop.Owned[unit](()))
+
+func fail_unit(code: ErrorCode, message: str) -> interop.Outcome[unit]:
+    let text = interop.copy_text(message) catch exhausted:
+        return interop.Outcome[unit].failure(memory.exhausted, interop.Owned[str]("out of memory copying a UI error"))
+    return interop.Outcome[unit].failure(code, text)

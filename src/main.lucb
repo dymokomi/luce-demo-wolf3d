@@ -1,0 +1,141 @@
+## Entry: luce-ui Application in game mode, original Wolf3D shareware data.
+import gpu
+import input
+import interop
+import memory
+import ownership
+import paths
+import strings
+import ui
+from ui import Application, Widget, Theme, Command, Shortcut
+import game
+
+pub func main(arguments: str[]) -> i32!:
+    var smoke = false
+    var fullscreen = false
+    var index: usize = 1
+    while index < arguments.length:
+        let argument = arguments[index]
+        index += 1
+        if argument == "--smoke":
+            smoke = true
+        elif argument == "--fullscreen":
+            fullscreen = true
+        elif argument == "--help" or argument == "-h":
+            print("luce-demo-wolf3d [--smoke] [--fullscreen]")
+            print("Needs the original shareware data files (VSWAP.WL1, GAMEMAPS.WL1, ...)")
+            print("  WASD/arrows move  Alt-strafe  Ctrl fire  Space open  F11 fullscreen")
+            return 0
+        elif argument.length > 0 and argument.bytes[0] == '-':
+            print(argument)
+            error(ui.invalid, "unknown option; try --help")
+    let view = try open_view(arguments[0] if arguments.length > 0 else "")
+    defer view.release()
+    let widget = view.as_interface[Widget](view.value())
+    defer widget.release()
+    let theme = Theme(background = gpu.Color(), foreground = gpu.Color(0.95, 0.85, 0.35))
+    let app = try interop.Reference[Application].adopt(
+        new Application(widget, title = "Wolfenstein 3D", width = 960, height = 600,
+            theme = theme, game = true, fps = 70.0, fullscreen = fullscreen) in memory.heap,
+        ui.application_type, memory.heap)
+    defer app.release()
+    let session = try interop.Reference[Session].adopt(new Session(app, view) in memory.heap, session_type, memory.heap)
+    defer session.release()
+    let tick = try interop.Callback[f64, unit].bind_mutating(session, Session.frame)
+    defer tick.release()
+    let frames = try app.value().on_frame(tick)
+    defer frames.release()
+    let quit = try interop.Reference[Command].adopt(
+        new Command("Quit", Shortcut(key = input.Key.f10), "quit") in memory.heap, ui.command_type, memory.heap)
+    defer quit.release()
+    let full = try interop.Reference[Command].adopt(
+        new Command("Fullscreen", Shortcut(key = input.Key.f11), "fullscreen") in memory.heap, ui.command_type, memory.heap)
+    defer full.release()
+    let quit_cb = try interop.Callback[unit, unit].bind_mutating(session, Session.quit)
+    defer quit_cb.release()
+    let full_cb = try interop.Callback[unit, unit].bind_mutating(session, Session.toggle_fullscreen)
+    defer full_cb.release()
+    let quit_conn = try quit.value().on_trigger(quit_cb)
+    defer quit_conn.release()
+    let full_conn = try full.value().on_trigger(full_cb)
+    defer full_conn.release()
+    try app.value().set_commands([quit, full])
+    let ran = app.value().run(frame_limit = 12 if smoke else 0)
+    defer ran.release()
+    try ran.get()
+    if smoke:
+        print("wolf3d smoke complete")
+    return 0
+
+struct Session:
+    var app: interop.Reference[Application]
+    var view: interop.Reference[game.GameView]
+
+    pub func init(app: interop.Reference[Application], view: interop.Reference[game.GameView]):
+        self.app = app.clone()
+        self.view = view.clone()
+
+    mutating func frame(elapsed: f64) -> interop.Outcome[unit]:
+        self.view.value().tick(elapsed) catch failure:
+            return fail_unit(failure.code, failure.message)
+        if self.view.value().wants_quit():
+            self.app.value().stop()
+        return ok_unit()
+
+    mutating func quit(unused: unit) -> interop.Outcome[unit]:
+        discard(unused)
+        self.app.value().stop()
+        return ok_unit()
+
+    mutating func toggle_fullscreen(unused: unit) -> interop.Outcome[unit]:
+        discard(unused)
+        self.app.value().set_fullscreen(not self.app.value().is_fullscreen()) catch failure:
+            return fail_unit(failure.code, failure.message)
+        return ok_unit()
+
+    mutating func close():
+        self.app.release()
+        self.view.release()
+
+    func trace(visit: func(ownership.Object*, void*) -> unit, context: void*):
+        self.app.trace(visit, context)
+        self.view.trace(visit, context)
+
+let session_type: interop.Type[Session] = interop.Type[Session]("Wolf3D session", Session.close, Session.trace, main_thread = true)
+
+func open_view(exe: str) -> interop.Reference[game.GameView]!:
+    let cwd = try_view("MAPHEAD.WL1", "GAMEMAPS.WL1", "VSWAP.WL1")
+    if let view = cwd:
+        return view
+    let nested = try_view("data/MAPHEAD.WL1", "data/GAMEMAPS.WL1", "data/VSWAP.WL1")
+    if let view = nested:
+        return view
+    let parent = try_view("../data/MAPHEAD.WL1", "../data/GAMEMAPS.WL1", "../data/VSWAP.WL1")
+    if let view = parent:
+        return view
+    if exe.length > 0:
+        let dir = paths.directory(exe)
+        let head = try paths.join(dir, "MAPHEAD.WL1")
+        defer strings.release(head)
+        let maps = try paths.join(dir, "GAMEMAPS.WL1")
+        defer strings.release(maps)
+        let vswap = try paths.join(dir, "VSWAP.WL1")
+        defer strings.release(vswap)
+        let beside = try_view(head, maps, vswap)
+        if let view = beside:
+            return view
+    error(ui.invalid, "could not open MAPHEAD.WL1 / GAMEMAPS.WL1 / VSWAP.WL1")
+
+func try_view(head: str, maps: str, vswap: str) -> interop.Reference[game.GameView]?:
+    return interop.Reference[game.GameView].adopt(
+        new game.GameView(head, maps, vswap) in memory.heap, game.game_view_type, memory.heap) catch failure:
+        discard(failure)
+        recover none
+
+func ok_unit() -> interop.Outcome[unit]:
+    return interop.Outcome[unit].success(interop.Owned[unit](()))
+
+func fail_unit(code: ErrorCode, message: str) -> interop.Outcome[unit]:
+    let text = interop.copy_text(message) catch exhausted:
+        return interop.Outcome[unit].failure(memory.exhausted, interop.Owned[str]("out of memory copying a UI error"))
+    return interop.Outcome[unit].failure(code, text)

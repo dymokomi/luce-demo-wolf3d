@@ -1,0 +1,701 @@
+## Actor think/action and shareware statetype tables — WOLFSRC/WL_ACT2.C.
+import wl_def
+import wl_state
+import wl_act1
+import wl_types
+from wl_types import Game, Actor, State
+
+pub var s_grdstand: State
+pub var s_grdpath1: State
+pub var s_grdpath1s: State
+pub var s_grdpath2: State
+pub var s_grdpath3: State
+pub var s_grdpath3s: State
+pub var s_grdpath4: State
+pub var s_grdpain: State
+pub var s_grdpain1: State
+pub var s_grdshoot1: State
+pub var s_grdshoot2: State
+pub var s_grdshoot3: State
+pub var s_grdchase1: State
+pub var s_grdchase1s: State
+pub var s_grdchase2: State
+pub var s_grdchase3: State
+pub var s_grdchase3s: State
+pub var s_grdchase4: State
+pub var s_grddie1: State
+pub var s_grddie2: State
+pub var s_grddie3: State
+pub var s_grddie4: State
+
+pub var s_dogstand: State
+pub var s_dogpath1: State
+pub var s_dogpath1s: State
+pub var s_dogpath2: State
+pub var s_dogpath3: State
+pub var s_dogpath3s: State
+pub var s_dogpath4: State
+pub var s_dogjump1: State
+pub var s_dogjump2: State
+pub var s_dogjump3: State
+pub var s_dogjump4: State
+pub var s_dogjump5: State
+pub var s_dogchase1: State
+pub var s_dogchase1s: State
+pub var s_dogchase2: State
+pub var s_dogchase3: State
+pub var s_dogchase3s: State
+pub var s_dogchase4: State
+pub var s_dogdie1: State
+pub var s_dogdie2: State
+pub var s_dogdie3: State
+pub var s_dogdead: State
+
+pub var s_ofcstand: State
+pub var s_ofcpath1: State
+pub var s_ofcpath1s: State
+pub var s_ofcpath2: State
+pub var s_ofcpath3: State
+pub var s_ofcpath3s: State
+pub var s_ofcpath4: State
+pub var s_ofcpain: State
+pub var s_ofcpain1: State
+pub var s_ofcshoot1: State
+pub var s_ofcshoot2: State
+pub var s_ofcshoot3: State
+pub var s_ofcchase1: State
+pub var s_ofcchase1s: State
+pub var s_ofcchase2: State
+pub var s_ofcchase3: State
+pub var s_ofcchase3s: State
+pub var s_ofcchase4: State
+pub var s_ofcdie1: State
+pub var s_ofcdie2: State
+pub var s_ofcdie3: State
+pub var s_ofcdie4: State
+pub var s_ofcdie5: State
+
+pub var s_mutstand: State
+pub var s_mutpath1: State
+pub var s_mutpath1s: State
+pub var s_mutpath2: State
+pub var s_mutpath3: State
+pub var s_mutpath3s: State
+pub var s_mutpath4: State
+pub var s_mutpain: State
+pub var s_mutpain1: State
+pub var s_mutshoot1: State
+pub var s_mutshoot2: State
+pub var s_mutshoot3: State
+pub var s_mutshoot4: State
+pub var s_mutchase1: State
+pub var s_mutchase1s: State
+pub var s_mutchase2: State
+pub var s_mutchase3: State
+pub var s_mutchase3s: State
+pub var s_mutchase4: State
+pub var s_mutdie1: State
+pub var s_mutdie2: State
+pub var s_mutdie3: State
+pub var s_mutdie4: State
+pub var s_mutdie5: State
+
+pub var s_ssstand: State
+pub var s_sspath1: State
+pub var s_sspath1s: State
+pub var s_sspath2: State
+pub var s_sspath3: State
+pub var s_sspath3s: State
+pub var s_sspath4: State
+pub var s_sspain: State
+pub var s_sspain1: State
+pub var s_ssshoot1: State
+pub var s_ssshoot2: State
+pub var s_ssshoot3: State
+pub var s_ssshoot4: State
+pub var s_ssshoot5: State
+pub var s_ssshoot6: State
+pub var s_ssshoot7: State
+pub var s_ssshoot8: State
+pub var s_ssshoot9: State
+pub var s_sschase1: State
+pub var s_sschase1s: State
+pub var s_sschase2: State
+pub var s_sschase3: State
+pub var s_sschase3s: State
+pub var s_sschase4: State
+pub var s_ssdie1: State
+pub var s_ssdie2: State
+pub var s_ssdie3: State
+pub var s_ssdie4: State
+
+pub var s_bossstand: State
+pub var s_bosschase1: State
+pub var s_bosschase1s: State
+pub var s_bosschase2: State
+pub var s_bosschase3: State
+pub var s_bosschase3s: State
+pub var s_bosschase4: State
+pub var s_bossdie1: State
+pub var s_bossdie2: State
+pub var s_bossdie3: State
+pub var s_bossdie4: State
+pub var s_bossshoot1: State
+pub var s_bossshoot2: State
+pub var s_bossshoot3: State
+pub var s_bossshoot4: State
+pub var s_bossshoot5: State
+pub var s_bossshoot6: State
+pub var s_bossshoot7: State
+pub var s_bossshoot8: State
+
+var states_ready: bool = false
+
+func set(st: State*, rotate: i64, shape: i64, tics: i64, think: (func(Game*, Actor*) -> unit)?,
+         action: (func(Game*, Actor*) -> unit)?, next: State*):
+    st.rotate = rotate
+    st.shapenum = shape
+    st.tictime = tics
+    st.think = think
+    st.action = action
+    st.next = next
+
+## WL_ACT2.C static initialisers. next pointers are filled here because Base has no
+## mutually-recursive global aggregate initialisers.
+pub func init_states():
+    if states_ready:
+        return
+    states_ready = true
+    set(&s_grdstand, 1, wl_def.spr_grd_s1, 0, t_stand, none, &s_grdstand)
+    set(&s_grdpath1, 1, wl_def.spr_grd_w1, 20, t_path, none, &s_grdpath1s)
+    set(&s_grdpath1s, 1, wl_def.spr_grd_w1, 5, none, none, &s_grdpath2)
+    set(&s_grdpath2, 1, wl_def.spr_grd_w2, 15, t_path, none, &s_grdpath3)
+    set(&s_grdpath3, 1, wl_def.spr_grd_w3, 20, t_path, none, &s_grdpath3s)
+    set(&s_grdpath3s, 1, wl_def.spr_grd_w3, 5, none, none, &s_grdpath4)
+    set(&s_grdpath4, 1, wl_def.spr_grd_w4, 15, t_path, none, &s_grdpath1)
+    set(&s_grdpain, 2, wl_def.spr_grd_pain, 10, none, none, &s_grdchase1)
+    set(&s_grdpain1, 2, wl_def.spr_grd_pain2, 10, none, none, &s_grdchase1)
+    set(&s_grdshoot1, 0, wl_def.spr_grd_shoot1, 20, none, none, &s_grdshoot2)
+    set(&s_grdshoot2, 0, wl_def.spr_grd_shoot1 + 1, 20, none, t_shoot, &s_grdshoot3)
+    set(&s_grdshoot3, 0, wl_def.spr_grd_shoot1 + 2, 20, none, none, &s_grdchase1)
+    set(&s_grdchase1, 1, wl_def.spr_grd_w1, 10, t_chase, none, &s_grdchase1s)
+    set(&s_grdchase1s, 1, wl_def.spr_grd_w1, 3, none, none, &s_grdchase2)
+    set(&s_grdchase2, 1, wl_def.spr_grd_w2, 8, t_chase, none, &s_grdchase3)
+    set(&s_grdchase3, 1, wl_def.spr_grd_w3, 10, t_chase, none, &s_grdchase3s)
+    set(&s_grdchase3s, 1, wl_def.spr_grd_w3, 3, none, none, &s_grdchase4)
+    set(&s_grdchase4, 1, wl_def.spr_grd_w4, 8, t_chase, none, &s_grdchase1)
+    set(&s_grddie1, 0, wl_def.spr_grd_die1, 15, none, a_death_scream, &s_grddie2)
+    set(&s_grddie2, 0, wl_def.spr_grd_die1 + 1, 15, none, none, &s_grddie3)
+    set(&s_grddie3, 0, wl_def.spr_grd_die1 + 2, 15, none, none, &s_grddie4)
+    set(&s_grddie4, 0, wl_def.spr_grd_dead, 0, none, none, &s_grddie4)
+
+    set(&s_dogstand, 1, wl_def.spr_dog_w1, 0, t_stand, none, &s_dogstand)
+    set(&s_dogpath1, 1, wl_def.spr_dog_w1, 20, t_path, none, &s_dogpath1s)
+    set(&s_dogpath1s, 1, wl_def.spr_dog_w1, 5, none, none, &s_dogpath2)
+    set(&s_dogpath2, 1, wl_def.spr_dog_w2, 15, t_path, none, &s_dogpath3)
+    set(&s_dogpath3, 1, wl_def.spr_dog_w3, 20, t_path, none, &s_dogpath3s)
+    set(&s_dogpath3s, 1, wl_def.spr_dog_w3, 5, none, none, &s_dogpath4)
+    set(&s_dogpath4, 1, wl_def.spr_dog_w4, 15, t_path, none, &s_dogpath1)
+    set(&s_dogjump1, 0, wl_def.spr_dog_jump1, 10, none, none, &s_dogjump2)
+    set(&s_dogjump2, 0, wl_def.spr_dog_jump1 + 1, 10, none, t_bite, &s_dogjump3)
+    set(&s_dogjump3, 0, wl_def.spr_dog_jump1 + 2, 10, none, none, &s_dogjump4)
+    set(&s_dogjump4, 0, wl_def.spr_dog_jump1, 10, none, none, &s_dogjump5)
+    set(&s_dogjump5, 0, wl_def.spr_dog_w1, 10, none, none, &s_dogchase1)
+    set(&s_dogchase1, 1, wl_def.spr_dog_w1, 10, t_dog_chase, none, &s_dogchase1s)
+    set(&s_dogchase1s, 1, wl_def.spr_dog_w1, 3, none, none, &s_dogchase2)
+    set(&s_dogchase2, 1, wl_def.spr_dog_w2, 8, t_dog_chase, none, &s_dogchase3)
+    set(&s_dogchase3, 1, wl_def.spr_dog_w3, 10, t_dog_chase, none, &s_dogchase3s)
+    set(&s_dogchase3s, 1, wl_def.spr_dog_w3, 3, none, none, &s_dogchase4)
+    set(&s_dogchase4, 1, wl_def.spr_dog_w4, 8, t_dog_chase, none, &s_dogchase1)
+    set(&s_dogdie1, 0, wl_def.spr_dog_die1, 15, none, a_death_scream, &s_dogdie2)
+    set(&s_dogdie2, 0, wl_def.spr_dog_die1 + 1, 15, none, none, &s_dogdie3)
+    set(&s_dogdie3, 0, wl_def.spr_dog_die1 + 2, 15, none, none, &s_dogdead)
+    set(&s_dogdead, 0, wl_def.spr_dog_dead, 15, none, none, &s_dogdead)
+
+    set(&s_ofcstand, 1, wl_def.spr_ofc_s1, 0, t_stand, none, &s_ofcstand)
+    set(&s_ofcpath1, 1, wl_def.spr_ofc_w1, 20, t_path, none, &s_ofcpath1s)
+    set(&s_ofcpath1s, 1, wl_def.spr_ofc_w1, 5, none, none, &s_ofcpath2)
+    set(&s_ofcpath2, 1, wl_def.spr_ofc_w2, 15, t_path, none, &s_ofcpath3)
+    set(&s_ofcpath3, 1, wl_def.spr_ofc_w3, 20, t_path, none, &s_ofcpath3s)
+    set(&s_ofcpath3s, 1, wl_def.spr_ofc_w3, 5, none, none, &s_ofcpath4)
+    set(&s_ofcpath4, 1, wl_def.spr_ofc_w4, 15, t_path, none, &s_ofcpath1)
+    set(&s_ofcpain, 2, wl_def.spr_ofc_pain, 10, none, none, &s_ofcchase1)
+    set(&s_ofcpain1, 2, wl_def.spr_ofc_pain2, 10, none, none, &s_ofcchase1)
+    set(&s_ofcshoot1, 0, wl_def.spr_ofc_shoot1, 6, none, none, &s_ofcshoot2)
+    set(&s_ofcshoot2, 0, wl_def.spr_ofc_shoot1 + 1, 20, none, t_shoot, &s_ofcshoot3)
+    set(&s_ofcshoot3, 0, wl_def.spr_ofc_shoot1 + 2, 10, none, none, &s_ofcchase1)
+    set(&s_ofcchase1, 1, wl_def.spr_ofc_w1, 10, t_chase, none, &s_ofcchase1s)
+    set(&s_ofcchase1s, 1, wl_def.spr_ofc_w1, 3, none, none, &s_ofcchase2)
+    set(&s_ofcchase2, 1, wl_def.spr_ofc_w2, 8, t_chase, none, &s_ofcchase3)
+    set(&s_ofcchase3, 1, wl_def.spr_ofc_w3, 10, t_chase, none, &s_ofcchase3s)
+    set(&s_ofcchase3s, 1, wl_def.spr_ofc_w3, 3, none, none, &s_ofcchase4)
+    set(&s_ofcchase4, 1, wl_def.spr_ofc_w4, 8, t_chase, none, &s_ofcchase1)
+    set(&s_ofcdie1, 0, wl_def.spr_ofc_die1, 11, none, a_death_scream, &s_ofcdie2)
+    set(&s_ofcdie2, 0, wl_def.spr_ofc_die1 + 1, 11, none, none, &s_ofcdie3)
+    set(&s_ofcdie3, 0, wl_def.spr_ofc_die1 + 2, 11, none, none, &s_ofcdie4)
+    set(&s_ofcdie4, 0, wl_def.spr_ofc_die4, 11, none, none, &s_ofcdie5)
+    set(&s_ofcdie5, 0, wl_def.spr_ofc_dead, 0, none, none, &s_ofcdie5)
+
+    set(&s_mutstand, 1, wl_def.spr_mut_s1, 0, t_stand, none, &s_mutstand)
+    set(&s_mutpath1, 1, wl_def.spr_mut_w1, 20, t_path, none, &s_mutpath1s)
+    set(&s_mutpath1s, 1, wl_def.spr_mut_w1, 5, none, none, &s_mutpath2)
+    set(&s_mutpath2, 1, wl_def.spr_mut_w2, 15, t_path, none, &s_mutpath3)
+    set(&s_mutpath3, 1, wl_def.spr_mut_w3, 20, t_path, none, &s_mutpath3s)
+    set(&s_mutpath3s, 1, wl_def.spr_mut_w3, 5, none, none, &s_mutpath4)
+    set(&s_mutpath4, 1, wl_def.spr_mut_w4, 15, t_path, none, &s_mutpath1)
+    set(&s_mutpain, 2, wl_def.spr_mut_pain, 10, none, none, &s_mutchase1)
+    set(&s_mutpain1, 2, wl_def.spr_mut_pain2, 10, none, none, &s_mutchase1)
+    set(&s_mutshoot1, 0, wl_def.spr_mut_shoot1, 6, none, t_shoot, &s_mutshoot2)
+    set(&s_mutshoot2, 0, wl_def.spr_mut_shoot1 + 1, 20, none, none, &s_mutshoot3)
+    set(&s_mutshoot3, 0, wl_def.spr_mut_shoot1 + 2, 10, none, t_shoot, &s_mutshoot4)
+    set(&s_mutshoot4, 0, wl_def.spr_mut_shoot1 + 3, 20, none, none, &s_mutchase1)
+    set(&s_mutchase1, 1, wl_def.spr_mut_w1, 10, t_chase, none, &s_mutchase1s)
+    set(&s_mutchase1s, 1, wl_def.spr_mut_w1, 3, none, none, &s_mutchase2)
+    set(&s_mutchase2, 1, wl_def.spr_mut_w2, 8, t_chase, none, &s_mutchase3)
+    set(&s_mutchase3, 1, wl_def.spr_mut_w3, 10, t_chase, none, &s_mutchase3s)
+    set(&s_mutchase3s, 1, wl_def.spr_mut_w3, 3, none, none, &s_mutchase4)
+    set(&s_mutchase4, 1, wl_def.spr_mut_w4, 8, t_chase, none, &s_mutchase1)
+    set(&s_mutdie1, 0, wl_def.spr_mut_die1, 7, none, a_death_scream, &s_mutdie2)
+    set(&s_mutdie2, 0, wl_def.spr_mut_die1 + 1, 7, none, none, &s_mutdie3)
+    set(&s_mutdie3, 0, wl_def.spr_mut_die1 + 2, 7, none, none, &s_mutdie4)
+    set(&s_mutdie4, 0, wl_def.spr_mut_die4, 7, none, none, &s_mutdie5)
+    set(&s_mutdie5, 0, wl_def.spr_mut_dead, 0, none, none, &s_mutdie5)
+
+    set(&s_ssstand, 1, wl_def.spr_ss_s1, 0, t_stand, none, &s_ssstand)
+    set(&s_sspath1, 1, wl_def.spr_ss_w1, 20, t_path, none, &s_sspath1s)
+    set(&s_sspath1s, 1, wl_def.spr_ss_w1, 5, none, none, &s_sspath2)
+    set(&s_sspath2, 1, wl_def.spr_ss_w2, 15, t_path, none, &s_sspath3)
+    set(&s_sspath3, 1, wl_def.spr_ss_w3, 20, t_path, none, &s_sspath3s)
+    set(&s_sspath3s, 1, wl_def.spr_ss_w3, 5, none, none, &s_sspath4)
+    set(&s_sspath4, 1, wl_def.spr_ss_w4, 15, t_path, none, &s_sspath1)
+    set(&s_sspain, 2, wl_def.spr_ss_pain, 10, none, none, &s_sschase1)
+    set(&s_sspain1, 2, wl_def.spr_ss_pain2, 10, none, none, &s_sschase1)
+    set(&s_ssshoot1, 0, wl_def.spr_ss_shoot1, 20, none, none, &s_ssshoot2)
+    set(&s_ssshoot2, 0, wl_def.spr_ss_shoot1 + 1, 20, none, t_shoot, &s_ssshoot3)
+    set(&s_ssshoot3, 0, wl_def.spr_ss_shoot1 + 2, 10, none, none, &s_ssshoot4)
+    set(&s_ssshoot4, 0, wl_def.spr_ss_shoot1 + 1, 10, none, t_shoot, &s_ssshoot5)
+    set(&s_ssshoot5, 0, wl_def.spr_ss_shoot1 + 2, 10, none, none, &s_ssshoot6)
+    set(&s_ssshoot6, 0, wl_def.spr_ss_shoot1 + 1, 10, none, t_shoot, &s_ssshoot7)
+    set(&s_ssshoot7, 0, wl_def.spr_ss_shoot1 + 2, 10, none, none, &s_ssshoot8)
+    set(&s_ssshoot8, 0, wl_def.spr_ss_shoot1 + 1, 10, none, t_shoot, &s_ssshoot9)
+    set(&s_ssshoot9, 0, wl_def.spr_ss_shoot1 + 2, 10, none, none, &s_sschase1)
+    set(&s_sschase1, 1, wl_def.spr_ss_w1, 10, t_chase, none, &s_sschase1s)
+    set(&s_sschase1s, 1, wl_def.spr_ss_w1, 3, none, none, &s_sschase2)
+    set(&s_sschase2, 1, wl_def.spr_ss_w2, 8, t_chase, none, &s_sschase3)
+    set(&s_sschase3, 1, wl_def.spr_ss_w3, 10, t_chase, none, &s_sschase3s)
+    set(&s_sschase3s, 1, wl_def.spr_ss_w3, 3, none, none, &s_sschase4)
+    set(&s_sschase4, 1, wl_def.spr_ss_w4, 8, t_chase, none, &s_sschase1)
+    set(&s_ssdie1, 0, wl_def.spr_ss_die1, 15, none, a_death_scream, &s_ssdie2)
+    set(&s_ssdie2, 0, wl_def.spr_ss_die1 + 1, 15, none, none, &s_ssdie3)
+    set(&s_ssdie3, 0, wl_def.spr_ss_die1 + 2, 15, none, none, &s_ssdie4)
+    set(&s_ssdie4, 0, wl_def.spr_ss_dead, 0, none, none, &s_ssdie4)
+
+    set(&s_bossstand, 0, wl_def.spr_boss_w1, 0, t_stand, none, &s_bossstand)
+    set(&s_bosschase1, 0, wl_def.spr_boss_w1, 10, t_chase, none, &s_bosschase1s)
+    set(&s_bosschase1s, 0, wl_def.spr_boss_w1, 3, none, none, &s_bosschase2)
+    set(&s_bosschase2, 0, wl_def.spr_boss_w1 + 1, 8, t_chase, none, &s_bosschase3)
+    set(&s_bosschase3, 0, wl_def.spr_boss_w1 + 2, 10, t_chase, none, &s_bosschase3s)
+    set(&s_bosschase3s, 0, wl_def.spr_boss_w1 + 2, 3, none, none, &s_bosschase4)
+    set(&s_bosschase4, 0, wl_def.spr_boss_w1 + 3, 8, t_chase, none, &s_bosschase1)
+    set(&s_bossdie1, 0, wl_def.spr_boss_w1 + 8, 15, none, a_death_scream, &s_bossdie2)
+    set(&s_bossdie2, 0, wl_def.spr_boss_w1 + 9, 15, none, none, &s_bossdie3)
+    set(&s_bossdie3, 0, wl_def.spr_boss_w1 + 10, 15, none, none, &s_bossdie4)
+    set(&s_bossdie4, 0, wl_def.spr_boss_w1 + 7, 0, none, none, &s_bossdie4)
+    set(&s_bossshoot1, 0, wl_def.spr_boss_w1 + 4, 30, none, none, &s_bossshoot2)
+    set(&s_bossshoot2, 0, wl_def.spr_boss_w1 + 5, 10, none, t_shoot, &s_bossshoot3)
+    set(&s_bossshoot3, 0, wl_def.spr_boss_w1 + 6, 10, none, t_shoot, &s_bossshoot4)
+    set(&s_bossshoot4, 0, wl_def.spr_boss_w1 + 5, 10, none, t_shoot, &s_bossshoot5)
+    set(&s_bossshoot5, 0, wl_def.spr_boss_w1 + 6, 10, none, t_shoot, &s_bossshoot6)
+    set(&s_bossshoot6, 0, wl_def.spr_boss_w1 + 5, 10, none, t_shoot, &s_bossshoot7)
+    set(&s_bossshoot7, 0, wl_def.spr_boss_w1 + 6, 10, none, t_shoot, &s_bossshoot8)
+    set(&s_bossshoot8, 0, wl_def.spr_boss_w1 + 4, 10, none, none, &s_bosschase1)
+
+## WL_ACT2.C T_Stand
+func t_stand(game: Game*, actor: Actor*):
+    sight_player(game, actor)
+
+## WL_STATE.C SightPlayer (kept next to the states it jumps into)
+func sight_player(game: Game*, actor: Actor*):
+    if (actor.flags & wl_def.fl_attackmode) != 0:
+        return
+    if actor.temp2 > 0:
+        actor.temp2 -= game.tics
+        if actor.temp2 > 0:
+            return
+        actor.temp2 = 0
+        first_sighting(game, actor)
+        return
+    if (actor.flags & wl_def.fl_ambush) != 0:
+        if not wl_state.check_sight(game, actor):
+            return
+    elif not wl_state.check_sight(game, actor) and not game.madenoise:
+        return
+    if actor.class == wl_def.class_guard:
+        actor.temp2 = 1 + wl_types.us_rnd_t(game) // 4
+    elif actor.class == wl_def.class_dog:
+        actor.temp2 = 1 + wl_types.us_rnd_t(game) // 8
+    else:
+        actor.temp2 = 1 + wl_types.us_rnd_t(game) // 6
+
+func sight_player_now(game: Game*, actor: Actor*) -> bool:
+    if (actor.flags & wl_def.fl_attackmode) != 0:
+        return true
+    if wl_state.check_sight(game, actor) or game.madenoise:
+        first_sighting(game, actor)
+        return true
+    return false
+
+## WL_STATE.C FirstSighting
+func first_sighting(game: Game*, actor: Actor*):
+    if actor.class == wl_def.class_guard:
+        wl_types.play_sound(game, wl_def.snd_halt)
+        wl_state.new_state(actor, &s_grdchase1)
+        actor.speed = actor.speed * 3
+    elif actor.class == wl_def.class_officer:
+        wl_types.play_sound(game, wl_def.snd_nein)
+        wl_state.new_state(actor, &s_ofcchase1)
+        actor.speed = actor.speed * 5
+    elif actor.class == wl_def.class_ss:
+        wl_types.play_sound(game, wl_def.snd_ss)
+        wl_state.new_state(actor, &s_sschase1)
+        actor.speed = actor.speed * 4
+    elif actor.class == wl_def.class_dog:
+        wl_types.play_sound(game, wl_def.snd_dog_bark)
+        wl_state.new_state(actor, &s_dogchase1)
+        actor.speed = actor.speed * 2
+    elif actor.class == wl_def.class_mutant:
+        wl_state.new_state(actor, &s_mutchase1)
+        actor.speed = actor.speed * 3
+    elif actor.class == wl_def.class_hans:
+        wl_types.play_sound(game, wl_def.snd_gutentag)
+        wl_state.new_state(actor, &s_bosschase1)
+        actor.speed = wl_def.spd_patrol * 3
+    actor.flags = actor.flags | wl_def.fl_attackmode | wl_def.fl_firstattack
+    if actor.distance < 0:
+        actor.distance = 0
+
+## WL_ACT2.C T_Chase
+func t_chase(game: Game*, actor: Actor*):
+    var dodge = false
+    if wl_state.check_line(game, actor.x, actor.y):
+        actor.hidden = false
+        var dx = actor.tilex - game.player.tilex
+        if dx < 0:
+            dx = 0 - dx
+        var dy = actor.tiley - game.player.tiley
+        if dy < 0:
+            dy = 0 - dy
+        let dist = dx if dx > dy else dy
+        var chance = 300
+        if dist != 0 and not (dist == 1 and actor.distance < 0x4000):
+            chance = (game.tics << 4) // dist
+        if wl_types.us_rnd_t(game) < chance:
+            if actor.class == wl_def.class_guard:
+                wl_state.new_state(actor, &s_grdshoot1)
+            elif actor.class == wl_def.class_officer:
+                wl_state.new_state(actor, &s_ofcshoot1)
+            elif actor.class == wl_def.class_ss:
+                wl_state.new_state(actor, &s_ssshoot1)
+            elif actor.class == wl_def.class_mutant:
+                wl_state.new_state(actor, &s_mutshoot1)
+            elif actor.class == wl_def.class_hans:
+                wl_state.new_state(actor, &s_bossshoot1)
+            return
+        dodge = true
+    else:
+        actor.hidden = true
+    if actor.dir == wl_def.nodir:
+        if dodge:
+            wl_state.select_dodge_dir(game, actor)
+        else:
+            wl_state.select_chase_dir(game, actor)
+        if actor.dir == wl_def.nodir:
+            return
+    var move = actor.speed * game.tics
+    var steps: i64 = 0
+    while move > 0 and steps < 64:
+        steps += 1
+        if actor.distance < 0:
+            let door = 0 - actor.distance - 1
+            wl_act1.open_door(game, door)
+            if game.doors[(usize)door].action != wl_def.dr_open:
+                return
+            actor.distance = wl_def.tile_global
+        if move < actor.distance:
+            wl_state.move_obj(game, actor, move)
+            break
+        actor.x = (actor.tilex << wl_def.tile_shift) + wl_def.tile_global // 2
+        actor.y = (actor.tiley << wl_def.tile_shift) + wl_def.tile_global // 2
+        move -= actor.distance
+        if dodge:
+            wl_state.select_dodge_dir(game, actor)
+        else:
+            wl_state.select_chase_dir(game, actor)
+        if actor.dir == wl_def.nodir:
+            return
+
+## WL_ACT2.C T_Path
+func t_path(game: Game*, actor: Actor*):
+    if sight_player_now(game, actor):
+        return
+    if actor.dir == wl_def.nodir:
+        wl_state.select_path_dir(game, actor)
+        if actor.dir == wl_def.nodir:
+            return
+    var move = actor.speed * game.tics
+    var steps: i64 = 0
+    while move > 0 and steps < 64:
+        steps += 1
+        if actor.distance < 0:
+            let door = 0 - actor.distance - 1
+            wl_act1.open_door(game, door)
+            if game.doors[(usize)door].action != wl_def.dr_open:
+                return
+            actor.distance = wl_def.tile_global
+        if move < actor.distance:
+            wl_state.move_obj(game, actor, move)
+            break
+        actor.x = (actor.tilex << wl_def.tile_shift) + wl_def.tile_global // 2
+        actor.y = (actor.tiley << wl_def.tile_shift) + wl_def.tile_global // 2
+        move -= actor.distance
+        wl_state.select_path_dir(game, actor)
+        if actor.dir == wl_def.nodir:
+            return
+
+## WL_ACT2.C T_DogChase
+func t_dog_chase(game: Game*, actor: Actor*):
+    var dx = actor.x - game.player.x
+    if dx < 0:
+        dx = 0 - dx
+    var dy = actor.y - game.player.y
+    if dy < 0:
+        dy = 0 - dy
+    if dx <= wl_def.min_actor_dist and dy <= wl_def.min_actor_dist:
+        wl_state.new_state(actor, &s_dogjump1)
+        return
+    t_chase(game, actor)
+
+## WL_ACT2.C T_Shoot
+func t_shoot(game: Game*, actor: Actor*):
+    if not wl_state.check_line(game, actor.x, actor.y):
+        if actor.class == wl_def.class_ss:
+            wl_types.play_sound(game, wl_def.snd_ss_fire)
+        elif actor.class == wl_def.class_hans:
+            wl_types.play_sound(game, wl_def.snd_boss_fire)
+        else:
+            wl_types.play_sound(game, wl_def.snd_nazi_fire)
+        return
+    var dx = actor.tilex - game.player.tilex
+    if dx < 0:
+        dx = 0 - dx
+    var dy = actor.tiley - game.player.tiley
+    if dy < 0:
+        dy = 0 - dy
+    var dist = dx if dx > dy else dy
+    if actor.class == wl_def.class_ss or actor.class == wl_def.class_hans or actor.class == wl_def.class_mutant:
+        dist = dist * 2 // 3
+    var hitchance = 256 - dist * 16
+    if (actor.flags & wl_def.fl_visable) == 0:
+        hitchance = 256 - dist * 8
+    if actor.class == wl_def.class_ss:
+        wl_types.play_sound(game, wl_def.snd_ss_fire)
+    elif actor.class == wl_def.class_hans:
+        wl_types.play_sound(game, wl_def.snd_boss_fire)
+    else:
+        wl_types.play_sound(game, wl_def.snd_nazi_fire)
+    if wl_types.us_rnd_t(game) < hitchance:
+        var damage = wl_types.us_rnd_t(game) >> 4
+        if dist < 2:
+            damage = wl_types.us_rnd_t(game) >> 2
+        elif dist < 4:
+            damage = wl_types.us_rnd_t(game) >> 3
+        wl_types.take_damage(game, damage)
+
+## WL_ACT2.C T_Bite
+func t_bite(game: Game*, actor: Actor*):
+    wl_types.play_sound(game, wl_def.snd_dog_attack)
+    var dx = game.player.x - actor.x
+    if dx < 0:
+        dx = 0 - dx
+    dx -= wl_def.tile_global
+    if dx <= wl_def.min_actor_dist:
+        var dy = game.player.y - actor.y
+        if dy < 0:
+            dy = 0 - dy
+        dy -= wl_def.tile_global
+        if dy <= wl_def.min_actor_dist:
+            wl_types.take_damage(game, wl_types.us_rnd_t(game) >> 4)
+
+## WL_ACT2.C A_DeathScream
+func a_death_scream(game: Game*, actor: Actor*):
+    if actor.class == wl_def.class_guard:
+        wl_types.play_sound(game, wl_def.snd_death1 if wl_types.us_rnd_t(game) & 1 == 0 else wl_def.snd_death2)
+    elif actor.class == wl_def.class_officer:
+        wl_types.play_sound(game, wl_def.snd_nein)
+    elif actor.class == wl_def.class_ss:
+        wl_types.play_sound(game, wl_def.snd_lebens)
+    elif actor.class == wl_def.class_dog:
+        wl_types.play_sound(game, wl_def.snd_dog_death)
+    elif actor.class == wl_def.class_mutant:
+        wl_types.play_sound(game, wl_def.snd_slurpie)
+    elif actor.class == wl_def.class_hans:
+        wl_types.play_sound(game, wl_def.snd_mutti)
+
+## WL_STATE.C DamageActor / KillActor — sit with the states they NewState into.
+pub func damage_actor(game: Game*, index: i64, damage: i64):
+    let actor = &game.actors[(usize)index]
+    var dmg = damage
+    game.madenoise = true
+    if (actor.flags & wl_def.fl_attackmode) == 0:
+        dmg = dmg << 1
+    actor.health -= dmg
+    if actor.health <= 0:
+        kill_actor(game, index)
+        return
+    if (actor.flags & wl_def.fl_attackmode) == 0:
+        first_sighting(game, actor)
+    if actor.class == wl_def.class_guard:
+        wl_state.new_state(actor, &s_grdpain if (actor.health & 1) != 0 else &s_grdpain1)
+    elif actor.class == wl_def.class_officer:
+        wl_state.new_state(actor, &s_ofcpain if (actor.health & 1) != 0 else &s_ofcpain1)
+    elif actor.class == wl_def.class_ss:
+        wl_state.new_state(actor, &s_sspain if (actor.health & 1) != 0 else &s_sspain1)
+    elif actor.class == wl_def.class_mutant:
+        wl_state.new_state(actor, &s_mutpain if (actor.health & 1) != 0 else &s_mutpain1)
+
+pub func kill_actor(game: Game*, index: i64):
+    let actor = &game.actors[(usize)index]
+    let tilex = actor.x >> wl_def.tile_shift
+    let tiley = actor.y >> wl_def.tile_shift
+    actor.tilex = tilex
+    actor.tiley = tiley
+    if actor.class == wl_def.class_guard:
+        game.score += 100
+        wl_state.new_state(actor, &s_grddie1)
+        wl_act1.place_item(game, tilex, tiley, wl_def.bo_clip2)
+    elif actor.class == wl_def.class_officer:
+        game.score += 400
+        wl_state.new_state(actor, &s_ofcdie1)
+        wl_act1.place_item(game, tilex, tiley, wl_def.bo_clip2)
+    elif actor.class == wl_def.class_ss:
+        game.score += 500
+        wl_state.new_state(actor, &s_ssdie1)
+        if game.bestweapon < wl_def.wp_machinegun:
+            wl_act1.place_item(game, tilex, tiley, wl_def.bo_machinegun)
+        else:
+            wl_act1.place_item(game, tilex, tiley, wl_def.bo_clip2)
+    elif actor.class == wl_def.class_dog:
+        game.score += 200
+        wl_state.new_state(actor, &s_dogdie1)
+    elif actor.class == wl_def.class_mutant:
+        game.score += 700
+        wl_state.new_state(actor, &s_mutdie1)
+        wl_act1.place_item(game, tilex, tiley, wl_def.bo_clip2)
+    elif actor.class == wl_def.class_hans:
+        game.score += 5000
+        wl_state.new_state(actor, &s_bossdie1)
+        wl_act1.place_item(game, tilex, tiley, wl_def.bo_key1)
+    actor.health = 0
+    actor.flags = (actor.flags & ~wl_def.fl_shootable) | wl_def.fl_nonmark
+    game.killcount += 1
+    game.actorat[wl_def.cell(actor.tilex, actor.tiley)] = 0
+
+## WL_ACT2.C starthitpoints[difficulty]
+func hitpoints(game: Game*, class: u8) -> i64:
+    let d = game.difficulty
+    if class == wl_def.class_guard:
+        return 25
+    if class == wl_def.class_officer:
+        return 50
+    if class == wl_def.class_ss:
+        return 100
+    if class == wl_def.class_dog:
+        return 1
+    if class == wl_def.class_mutant:
+        if d <= 0:
+            return 45
+        if d >= 3:
+            return 65
+        return 55
+    if class == wl_def.class_hans:
+        if d <= 0:
+            return 850
+        if d == 1:
+            return 950
+        if d == 2:
+            return 1050
+        return 1200
+    return 25
+
+func stand_state(class: u8) -> State*:
+    if class == wl_def.class_officer:
+        return &s_ofcstand
+    if class == wl_def.class_ss:
+        return &s_ssstand
+    if class == wl_def.class_dog:
+        return &s_dogstand
+    if class == wl_def.class_mutant:
+        return &s_mutstand
+    if class == wl_def.class_hans:
+        return &s_bossstand
+    return &s_grdstand
+
+func path_state(class: u8) -> State*:
+    if class == wl_def.class_officer:
+        return &s_ofcpath1
+    if class == wl_def.class_ss:
+        return &s_sspath1
+    if class == wl_def.class_dog:
+        return &s_dogpath1
+    if class == wl_def.class_mutant:
+        return &s_mutpath1
+    return &s_grdpath1
+
+## WL_ACT2.C SpawnStand / SpawnPatrol / SpawnBoss / SpawnDeadGuard
+pub func spawn_enemy(game: Game*, class: u8, x: i64, y: i64, dir: i64, path: bool):
+    if game.actor_count >= wl_def.max_actors:
+        return
+    var speed = wl_def.spd_dog if class == wl_def.class_dog else wl_def.spd_patrol
+    var st = path_state(class) if path else stand_state(class)
+    var flags = wl_def.fl_shootable
+    if class == wl_def.class_hans:
+        flags = flags | wl_def.fl_ambush
+    if game.maps.walls[wl_def.plane_cell(x, y)] == wl_def.ambush_tile:
+        flags = flags | wl_def.fl_ambush
+        game.tilemap[wl_def.cell(x, y)] = 0
+    var actor = Actor(x = (x << wl_def.tile_shift) + wl_def.tile_global // 2,
+        y = (y << wl_def.tile_shift) + wl_def.tile_global // 2,
+        tilex = x, tiley = y, angle = dir * 90, class = class, health = hitpoints(game, class),
+        shapenum = st.shapenum, flags = flags, active = true, dir = dir * 2,
+        speed = speed, distance = wl_def.tile_global, state = st)
+    wl_state.new_state(&actor, st)
+    if path:
+        game.actorat[wl_def.cell(x, y)] = 0
+        if dir == 0:
+            actor.tilex += 1
+        elif dir == 1:
+            actor.tiley -= 1
+        elif dir == 2:
+            actor.tilex -= 1
+        else:
+            actor.tiley += 1
+        actor.x = (actor.tilex << wl_def.tile_shift) + wl_def.tile_global // 2
+        actor.y = (actor.tiley << wl_def.tile_shift) + wl_def.tile_global // 2
+    let index = game.actor_count
+    game.actors[(usize)index] = actor
+    game.actorat[wl_def.cell(actor.tilex, actor.tiley)] = 1000 + (u16)index
+    game.actor_count += 1
+    game.killtotal += 1
+
+pub func spawn_dead_guard(game: Game*, x: i64, y: i64):
+    if game.actor_count >= wl_def.max_actors:
+        return
+    var actor = Actor(x = (x << wl_def.tile_shift) + wl_def.tile_global // 2,
+        y = (y << wl_def.tile_shift) + wl_def.tile_global // 2,
+        tilex = x, tiley = y, class = wl_def.class_dead, shapenum = wl_def.spr_grd_dead,
+        flags = wl_def.fl_nonmark | wl_def.fl_nevermark, active = true, dir = wl_def.nodir,
+        state = &s_grddie4)
+    wl_state.new_state(&actor, &s_grddie4)
+    actor.flags = wl_def.fl_nonmark | wl_def.fl_nevermark
+    game.actors[(usize)game.actor_count] = actor
+    game.actor_count += 1

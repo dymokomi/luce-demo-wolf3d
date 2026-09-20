@@ -1,0 +1,7 @@
+[package]
+name = "luce_demo_wolf3d"
+source = "src"
+
+[dependencies]
+luce_ui = "../luce-ui"
+luce_audio = "../luce-audio"

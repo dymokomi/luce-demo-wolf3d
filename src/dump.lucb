@@ -1,0 +1,76 @@
+import ui
+from ui import Raster
+import wl_def
+import wl_game
+import wl_draw
+import wl_menu
+import wl_types
+import id_sd
+from wl_types import Buttons
+
+pub func main(arguments: str[]) -> i32!:
+    discard(arguments)
+    var game = try wl_game.load_game("data/MAPHEAD.WL1", "data/GAMEMAPS.WL1", "data/VSWAP.WL1")
+    defer game.close()
+    print(f"spawn {game.player.tilex},{game.player.tiley} angle {game.player.angle} doors {game.door_count}")
+    var oy: i64 = game.player.tiley - 3
+    while oy <= game.player.tiley + 3:
+        var ox: i64 = game.player.tilex - 3
+        while ox <= game.player.tilex + 3:
+            let tile = (i64)game.tilemap[wl_def.cell(ox, oy)]
+            print(f" {ox},{oy}={tile}")
+            ox += 1
+        oy += 1
+    var d: i64 = 0
+    while d < game.door_count:
+        let door = game.doors[(usize)d]
+        print(f"door {d} at {door.tilex},{door.tiley} vert {door.vertical} lock {door.lock}")
+        d += 1
+    print(f"status {game.statusbar.width}x{game.statusbar.height} bytes {game.statusbar.pixels.length}")
+    let zero = wl_types.latch_pic(&game, wl_def.n_0_pic)
+    print(f"N_0PIC {zero.width}x{zero.height} bytes {zero.pixels.length}")
+    var refresh = wl_draw.Refresh()
+    var raster = try Raster(320, 200)
+    defer raster.close()
+    try wl_draw.three_d_refresh(&game, &refresh, &raster)
+    try wl_draw.write_ppm(&refresh, "docs/frame.ppm")
+    print("wrote docs/frame.ppm")
+    game.player.angle = 45
+    try wl_draw.three_d_refresh(&game, &refresh, &raster)
+    try wl_draw.write_ppm(&refresh, "docs/frame45.ppm")
+    game.player.angle = 90
+    try wl_draw.three_d_refresh(&game, &refresh, &raster)
+    try wl_draw.write_ppm(&refresh, "docs/frame90.ppm")
+    game.player.angle = 180
+    try wl_draw.three_d_refresh(&game, &refresh, &raster)
+    try wl_draw.write_ppm(&refresh, "docs/frame180.ppm")
+    print("wrote rotation dumps")
+    d = 0
+    while d < game.door_count:
+        let door = game.doors[(usize)d]
+        if door.tilex == 32 and door.tiley == 57:
+            game.doors[(usize)d].action = wl_def.dr_opening
+            game.doors[(usize)d].position = 0x8000
+            print(f"half-open door {d} vert {door.vertical} lock {door.lock}")
+            break
+        d += 1
+    game.player.angle = 0
+    try wl_draw.three_d_refresh(&game, &refresh, &raster)
+    try wl_draw.write_ppm(&refresh, "docs/door.ppm")
+    print("wrote docs/door.ppm")
+    print(f"mixer ready {game.mixer.ready} audio chunks {game.audio.count} music_start {game.audio.music_start}")
+    print(f"weapon {game.weapon} ammo {game.ammo} knife_spr {wl_def.spr_knife_ready} pistol_spr {wl_def.spr_pistolready}")
+    game.mode = wl_def.mode_title
+    game.fade = 10
+    var buttons = Buttons()
+    wl_menu.tick(&game, &refresh, buttons, 0.0)
+    try wl_draw.write_ppm(&refresh, "docs/title.ppm")
+    print("wrote docs/title.ppm")
+    game.mode = wl_def.mode_menu
+    game.menu_cur = 6
+    wl_menu.tick(&game, &refresh, buttons, 0.0)
+    try wl_draw.write_ppm(&refresh, "docs/menu.ppm")
+    print("wrote docs/menu.ppm")
+    id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_nazi_nor)
+    print("started intro music")
+    return 0

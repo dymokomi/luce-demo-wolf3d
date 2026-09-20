@@ -1,0 +1,168 @@
+## ID_CA.C / ID_VL.C graphics: VGAHEAD + Huffman + VL_DePlaneVGA.
+import c
+import files
+import memory
+import wl_def
+
+pub struct Pic:
+    pub var pixels: u8[]
+    pub var width: i64
+    pub var height: i64
+
+    pub mutating func close():
+        if self.pixels.length > 0:
+            free(self.pixels) in memory.heap
+        var empty: u8[]
+        self.pixels = empty
+        self.width = 0
+        self.height = 0
+
+pub struct Graph:
+    var head: u8[]
+    var data: u8[]
+    var dict: u8[]
+    var pictable: u8[]
+
+    pub mutating func close():
+        if self.head.length > 0:
+            free(self.head) in memory.heap
+        if self.data.length > 0:
+            free(self.data) in memory.heap
+        if self.dict.length > 0:
+            free(self.dict) in memory.heap
+        if self.pictable.length > 0:
+            free(self.pictable) in memory.heap
+        var empty: u8[]
+        self.head = empty
+        self.data = empty
+        self.dict = empty
+        self.pictable = empty
+
+    ## CA_CacheGrChunk + CAL_DeplaneGrChunk
+    pub func cache_gr_chunk(chunk: i64) -> Pic!:
+        if self.dict.length < 1024 or chunk < 0:
+            error(wl_def.invalid, "VGAGRAPH is not loaded")
+        let raw = chunk_bytes(self.head, self.data, (usize)chunk)
+        if raw.length < 4:
+            error(wl_def.invalid, "VGAGRAPH chunk is missing")
+        let expanded = (i64)wl_def.u32le(raw, 0)
+        if expanded <= 0 or expanded > 256000:
+            error(wl_def.invalid, "VGAGRAPH chunk size is invalid")
+        var pic = Pic()
+        pic.pixels = try huff_expand(raw[4..<raw.length], self.dict, expanded)
+        if chunk >= wl_def.start_pics:
+            let size = pic_size(self.pictable, chunk)
+            pic.width = size.width
+            pic.height = size.height
+            if size.width > 0 and size.height > 0 and (size.width % 4) == 0:
+                deplane(pic.pixels, size.width, size.height)
+        return pic
+
+pub func load_graph(head_path: str, graph_path: str, dict_path: str) -> Graph!:
+    var graph = Graph()
+    graph.head = try files.read((c.str)head_path)
+    errdefer free(graph.head) in memory.heap
+    graph.data = try files.read((c.str)graph_path)
+    errdefer free(graph.data) in memory.heap
+    graph.dict = try files.read((c.str)dict_path)
+    errdefer free(graph.dict) in memory.heap
+    if graph.dict.length < 1024 or graph.head.length < 6:
+        error(wl_def.invalid, "VGAGRAPH headers are truncated")
+    let raw = chunk_bytes(graph.head, graph.data, (usize)wl_def.struct_pic)
+    if raw.length < 4:
+        error(wl_def.invalid, "STRUCTPIC is missing")
+    graph.pictable = try huff_expand(raw[4..<raw.length], graph.dict, wl_def.num_pics * 4)
+    return graph
+
+struct Dim:
+    var width: i64
+    var height: i64
+
+func pic_size(table: const u8[], chunk: i64) -> Dim:
+    let index = chunk - wl_def.start_pics
+    if index < 0:
+        return Dim()
+    let off = (usize)index * 4
+    if off + 3 >= table.length:
+        return Dim()
+    return Dim(width = (i64)wl_def.u16le(table, off), height = (i64)wl_def.u16le(table, off + 2))
+
+func chunk_bytes(head: const u8[], graph: const u8[], i: usize) -> const u8[]:
+    let n = head.length // 3
+    let off = offset3(head, i)
+    if off < 0:
+        return graph[0..<0]
+    var end: i32 = (i32)graph.length
+    var j = i + 1
+    while j < n:
+        let noff = offset3(head, j)
+        if noff >= 0:
+            end = noff
+            break
+        j += 1
+    if off >= end or (usize)end > graph.length:
+        return graph[0..<0]
+    return graph[(usize)off..<(usize)end]
+
+func offset3(head: const u8[], i: usize) -> i32:
+    let o = i * 3
+    if o + 2 >= head.length:
+        return -1
+    let v = (i32)head[o] + (i32)head[o + 1] * 256 + (i32)head[o + 2] * 65536
+    if v == 0xffffff:
+        return -1
+    return v
+
+func huff_expand(source: const u8[], dict: const u8[], length: i64) -> u8[]!:
+    var dest = try alloc u8[(usize)length] in memory.heap
+    errdefer free(dest) in memory.heap
+    if source.length == 0:
+        error(wl_def.invalid, "empty Huffman chunk")
+    var si: usize = 0
+    var di: usize = 0
+    var val = source[0]
+    si = 1
+    var mask: u8 = 1
+    var node: usize = 254
+    while di < dest.length:
+        let bit0 = wl_def.u16le(dict, node * 4)
+        let bit1 = wl_def.u16le(dict, node * 4 + 2)
+        let nodeval = bit0 if (val & mask) == 0 else bit1
+        if mask == 128:
+            if si >= source.length:
+                break
+            val = source[si]
+            si += 1
+            mask = 1
+        else:
+            mask = mask * 2
+        if nodeval < 256:
+            dest[di] = (u8)nodeval
+            di += 1
+            node = 254
+        else:
+            node = (usize)nodeval - 256
+            if node > 255:
+                error(wl_def.invalid, "bad Huffman node")
+    return dest
+
+func deplane(source: u8[], width: i64, height: i64):
+    let size = (usize)(width * height)
+    if source.length < size:
+        return
+    var temp = alloc u8[size] in memory.heap catch failure:
+        discard(failure)
+        return
+    defer free(temp) in memory.heap
+    let pwidth = width // 4
+    var srcline: usize = 0
+    for plane in 0..<4:
+        var dest: usize = 0
+        for y in 0..<height:
+            for x in 0..<pwidth:
+                if srcline < source.length and dest + (usize)(x * 4 + plane) < temp.length:
+                    temp[dest + (usize)(x * 4 + plane)] = source[srcline]
+                srcline += 1
+            dest += (usize)width
+    for i in 0..<size:
+        source[i] = temp[i]

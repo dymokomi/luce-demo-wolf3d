@@ -1,0 +1,52 @@
+## ID_CA.C audio: AUDIOHED offsets + AUDIOT hunks (AdLib IMF music).
+import c
+import files
+import memory
+import wl_def
+
+pub struct Audio:
+    var data: u8[]
+    var starts: i32[320]
+    pub var count: i64
+    pub var music_start: i64
+
+    pub mutating func close():
+        if self.data.length > 0:
+            free(self.data) in memory.heap
+        var empty: u8[]
+        self.data = empty
+        self.count = 0
+
+    pub func chunk(index: i64) -> const u8[]:
+        if index < 0 or index + 1 >= self.count:
+            return self.data[0..<0]
+        let a = self.starts[(usize)index]
+        let b = self.starts[(usize)(index + 1)]
+        if a < 0 or b <= a or (usize)b > self.data.length:
+            return self.data[0..<0]
+        var end = (usize)b
+        if end > self.data.length:
+            end = self.data.length
+        return self.data[(usize)a..<end]
+
+pub func load_audio(head_path: str, data_path: str) -> Audio!:
+    let head = try files.read((c.str)head_path)
+    defer free(head) in memory.heap
+    var audio = Audio()
+    audio.data = try files.read((c.str)data_path)
+    errdefer free(audio.data) in memory.heap
+    let n = (i64)head.length // 4
+    if n < 2:
+        error(wl_def.invalid, "AUDIOHED is truncated")
+    var i: i64 = 0
+    while i < n and i < 320:
+        audio.starts[(usize)i] = wl_def.i32le(head, (usize)(i * 4))
+        i += 1
+    audio.count = i
+    ## 27 MUSE tracks at the end. Shareware AUDIOWL1 is 207 (69*3); this WL1
+    ## AUDIOHED is the 87-sound layout so STARTMUSIC is 261.
+    var music = i - 1 - 27
+    if music < 0:
+        music = 0
+    audio.music_start = music
+    return audio

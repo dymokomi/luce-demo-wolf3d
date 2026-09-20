@@ -1,0 +1,107 @@
+## Play loop — WOLFSRC/WL_PLAY.C PlayLoop / DoActor.
+import wl_def
+import wl_act1
+import wl_agent
+import wl_game
+import id_sd
+from wl_types import Game, Actor, Buttons
+
+## WL_PLAY.C PlayLoop (one 70 Hz tic)
+pub func simulate(game: Game*, buttons: Buttons, elapsed: f64):
+    var tics = (i64)(elapsed * 70.0 + 0.5)
+    if tics < 1:
+        tics = 1
+    if tics > wl_def.max_tics:
+        tics = wl_def.max_tics
+    game.tics = tics
+    game.madenoise = false
+    if game.won:
+        return
+    if game.dead:
+        wl_act1.move_doors(game)
+        game.dead_tics -= game.tics
+        if game.dead_tics <= 0:
+            game.dead_tics = 1
+            game.lives -= 1
+            if game.lives > -1:
+                wl_game.revive(game)
+            else:
+                game.ingame = false
+                game.mode = wl_def.mode_high
+                game.mode_tics = 0
+                id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_roster)
+        return
+    wl_agent.check_weapon_change(game, buttons)
+    if buttons.use_edge:
+        wl_agent.cmd_use(game)
+    game.time_tics += game.tics
+    if game.playstate != 0:
+        game.mode = wl_def.mode_inter
+        game.mode_tics = 0
+        game.ingame = true
+        return
+    if game.attacking:
+        wl_agent.t_attack(game, buttons)
+    elif buttons.attack_edge:
+        wl_agent.cmd_fire(game)
+    wl_agent.control_movement(game, buttons)
+    wl_act1.move_doors(game)
+    wl_act1.move_pwalls(game)
+    tick_actors(game)
+    wl_agent.get_bonus(game)
+    wl_agent.update_face(game)
+    let info = game.maps.info[wl_def.plane_cell(game.player.tilex, game.player.tiley)]
+    if info == wl_def.exit_tile:
+        game.playstate = 1
+
+func tick_actors(game: Game*):
+    for i in 0..<game.actor_count:
+        do_actor(game, i)
+
+## WL_PLAY.C DoActor — call state->action, then state = state->next and ADD tictime,
+## then state->think. NewState is not used for the next-chain.
+func do_actor(game: Game*, index: i64):
+    let actor = &game.actors[(usize)index]
+    if (actor.flags & (wl_def.fl_nevermark | wl_def.fl_nonmark)) == 0:
+        if game.actorat[wl_def.cell(actor.tilex, actor.tiley)] == 1000 + (u16)index:
+            game.actorat[wl_def.cell(actor.tilex, actor.tiley)] = 0
+    if actor.state == none:
+        return
+    if actor.ticcount == 0:
+        run_think(game, actor)
+        mark_actor(game, actor, index)
+        return
+    actor.ticcount -= game.tics
+    while actor.ticcount <= 0:
+        run_action(game, actor)
+        if let st = actor.state:
+            if let nxt = st.next:
+                actor.state = nxt
+                actor.shapenum = nxt.shapenum
+                if nxt.tictime == 0:
+                    actor.ticcount = 0
+                    break
+                actor.ticcount += nxt.tictime
+            else:
+                return
+        else:
+            return
+    run_think(game, actor)
+    mark_actor(game, actor, index)
+
+func run_think(game: Game*, actor: Actor*):
+    if let st = actor.state:
+        if let think = st.think:
+            think(game, actor)
+
+func run_action(game: Game*, actor: Actor*):
+    if let st = actor.state:
+        if let action = st.action:
+            action(game, actor)
+
+func mark_actor(game: Game*, actor: Actor*, index: i64):
+    if (actor.flags & wl_def.fl_nevermark) != 0:
+        return
+    if (actor.flags & wl_def.fl_nonmark) != 0 and game.actorat[wl_def.cell(actor.tilex, actor.tiley)] != 0:
+        return
+    game.actorat[wl_def.cell(actor.tilex, actor.tiley)] = 1000 + (u16)index

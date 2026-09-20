@@ -1,0 +1,240 @@
+## Shared game objects — WOLFSRC/WL_DEF.H statetype / objtype / doorobj_t / statobj_t.
+## Lives in its own module so id_ca/id_pm/id_sd can keep importing only wl_def constants.
+import math
+import wl_def
+import id_ca
+import id_pm
+import id_graph
+import id_sd
+import id_audio
+
+## WL_DEF.H statetype: rotate, shapenum, tictime, think, action, next.
+## think/action are nullable function pointers, matching original NULL entries.
+pub struct State:
+    pub var rotate: i64
+    pub var shapenum: i64
+    pub var tictime: i64
+    pub var think: (func(Game*, Actor*) -> unit)?
+    pub var action: (func(Game*, Actor*) -> unit)?
+    pub var next: State*?
+
+## WL_DEF.H objtype
+pub struct Actor:
+    pub var x: i64
+    pub var y: i64
+    pub var tilex: i64
+    pub var tiley: i64
+    pub var angle: i64
+    pub var class: u8
+    pub var health: i64
+    pub var shapenum: i64
+    pub var flags: u32
+    pub var active: bool
+    pub var dir: i64
+    pub var ticcount: i64
+    pub var state: State*?
+    pub var viewx: i64
+    pub var transx: i64
+    pub var viewheight: i64
+    pub var speed: i64
+    pub var distance: i64
+    pub var temp2: i64
+    pub var hidden: bool
+
+## WL_DEF.H doorobj_t plus Wolf4SDL door position (0 closed .. 0xffff open)
+pub struct Door:
+    pub var tilex: i64
+    pub var tiley: i64
+    pub var vertical: bool
+    pub var lock: i64
+    pub var action: u8
+    pub var position: i64
+    pub var ticcount: i64
+
+## WL_DEF.H statobj_t
+pub struct StaticObj:
+    pub var tilex: i64
+    pub var tiley: i64
+    pub var shapenum: i64
+    pub var flags: u32
+    pub var item: u8
+
+## WL_PLAY.C buttonstate / ControlStruct
+pub struct Buttons:
+    pub var forward: bool
+    pub var back: bool
+    pub var left: bool
+    pub var right: bool
+    pub var turn_left: bool
+    pub var turn_right: bool
+    pub var run: bool
+    pub var attack: bool
+    pub var use: bool
+    pub var attack_edge: bool
+    pub var use_edge: bool
+    pub var strafe: bool
+    pub var ready_knife: bool
+    pub var ready_pistol: bool
+    pub var ready_machine: bool
+    pub var ready_chain: bool
+    pub var enter: bool
+    pub var enter_edge: bool
+    pub var escape: bool
+    pub var escape_edge: bool
+    pub var yes: bool
+    pub var no: bool
+    pub var pause: bool
+    pub var any_key: bool
+
+pub struct Game:
+    pub var maps: id_ca.Maps
+    pub var pages: id_pm.Pages
+    pub var tilemap: u8[4096]
+    pub var spotvis: u8[4096]
+    pub var actorat: u16[4096]
+    pub var player: Actor
+    pub var actors: Actor[150]
+    pub var actor_count: i64
+    pub var doors: Door[64]
+    pub var door_count: i64
+    pub var statics: StaticObj[400]
+    pub var static_count: i64
+    pub var health: i64
+    pub var ammo: i64
+    pub var lives: i64
+    pub var score: i64
+    pub var keys: i64
+    pub var weapon: i64
+    pub var bestweapon: i64
+    pub var chosenweapon: i64
+    pub var attackframe: i64
+    pub var attackcount: i64
+    pub var weaponframe: i64
+    pub var attacking: bool
+    pub var rnd: i64
+    pub var madenoise: bool
+    pub var mixer: id_sd.Mixer
+    pub var mapon: i64
+    pub var tics: i64
+    pub var won: bool
+    pub var dead: bool
+    pub var killcount: i64
+    pub var killtotal: i64
+    pub var secretcount: i64
+    pub var secrettotal: i64
+    pub var anglefrac: i64
+    pub var sintable: i64[450]
+    pub var graph: id_graph.Graph
+    pub var statusbar: id_graph.Pic
+    pub var latch: id_graph.Pic[44]
+    pub var pics: id_graph.Pic[160]
+    pub var pic_ok: u8[160]
+    pub var audio: id_audio.Audio
+    pub var mode: i64
+    pub var mode_tics: i64
+    pub var menu_cur: i64
+    pub var menu_gun: i64
+    pub var menu_gun_tics: i64
+    pub var confirm_yes: bool
+    pub var confirm_kind: i64
+    pub var difficulty: i64
+    pub var ingame: bool
+    pub var fontcolor: u8
+    pub var print_x: i64
+    pub var print_y: i64
+    pub var treasurecount: i64
+    pub var treasuretotal: i64
+    pub var time_tics: i64
+    pub var hs_score: i64[7]
+    pub var hs_completed: i64[7]
+    pub var fade: i64
+    pub var help_page: i64
+    pub var want_quit: bool
+    pub var pwallstate: i64
+    pub var pwallpos: i64
+    pub var pwallx: i64
+    pub var pwally: i64
+    pub var pwalldir: i64
+    pub var pwalltile: i64
+    pub var faceframe: i64
+    pub var facecount: i64
+    pub var gatling_face: i64
+    pub var playstate: i64
+    pub var dead_tics: i64
+
+    pub mutating func close():
+        self.maps.close()
+        self.pages.close()
+        self.statusbar.close()
+        var i: i64 = 0
+        while i < wl_def.latch_pic_count:
+            self.latch[(usize)i].close()
+            i += 1
+        i = 0
+        while i < wl_def.max_pics:
+            self.pics[(usize)i].close()
+            i += 1
+        self.mixer.close()
+        self.audio.close()
+        self.graph.close()
+
+pub func cached_pic(game: Game*, chunk: i64) -> id_graph.Pic*:
+    if chunk < 0 or chunk >= wl_def.max_pics:
+        return &game.pics[0]
+    if game.pic_ok[(usize)chunk] == 0:
+        game.pics[(usize)chunk] = game.graph.cache_gr_chunk(chunk) catch failure:
+            discard(failure)
+            recover id_graph.Pic()
+        game.pic_ok[(usize)chunk] = 1
+    return &game.pics[(usize)chunk]
+
+pub func latch_pic(game: Game*, chunk: i64) -> id_graph.Pic*:
+    let index = chunk - wl_def.latch_pics_start
+    if index < 0 or index >= wl_def.latch_pic_count:
+        return &game.latch[0]
+    return &game.latch[(usize)index]
+
+pub func play_sound(game: Game*, sound: i64):
+    id_sd.play(&game.mixer, sound)
+
+## WL_AGENT.C TakeDamage
+pub func take_damage(game: Game*, points: i64):
+    if game.dead:
+        return
+    game.health -= points
+    play_sound(game, wl_def.snd_damage)
+    if game.health <= 0:
+        game.health = 0
+        game.dead = true
+        game.dead_tics = 70
+        play_sound(game, wl_def.snd_death1)
+
+## ID_US.C US_RndT
+pub func us_rnd_t(game: Game*) -> i64:
+    game.rnd = (game.rnd * 205 + 1) % 256
+    return game.rnd
+
+pub func table_sin(game: Game*, angle: i64) -> i64:
+    var a = angle
+    while a < 0:
+        a += wl_def.angles
+    while a >= wl_def.angles:
+        a -= wl_def.angles
+    return game.sintable[(usize)a]
+
+pub func table_cos(game: Game*, angle: i64) -> i64:
+    return table_sin(game, angle + wl_def.angle_quad)
+
+pub func fill_trig(game: Game*):
+    var angle = 0.0
+    let step = math.pi / 2.0 / (f64)wl_def.angle_quad
+    for i in 0..<wl_def.angle_quad:
+        let value = (i64)((f64)wl_def.tile_global * math.sin(angle))
+        game.sintable[(usize)i] = value
+        game.sintable[(usize)(i + wl_def.angles)] = value
+        game.sintable[(usize)(wl_def.angles // 2 - i)] = value
+        game.sintable[(usize)(wl_def.angles - i)] = 0 - value
+        game.sintable[(usize)(wl_def.angles // 2 + i)] = 0 - value
+        angle += step
+    game.sintable[(usize)wl_def.angle_quad] = 65536
+    game.sintable[(usize)(3 * wl_def.angle_quad)] = 0 - 65536

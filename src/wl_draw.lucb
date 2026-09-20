@@ -1,0 +1,1137 @@
+## 3D refresh from WOLFSRC/WL_DRAW.C and the C translation of AsmRefresh in Wolf4SDL.
+import c
+import files
+import math
+import pal
+import wl_def
+import wl_types
+import id_graph
+from wl_types import Game, Actor
+import ui
+import gpu
+
+pub struct Refresh:
+    var fine: i64[900]
+    var sintable: i64[450]
+    var pixelangle: i64[320]
+    var horizwall: i64[64]
+    var vertwall: i64[64]
+    var wallheight: i64[320]
+    var vbuf: u8[64000]
+    var built: bool
+    var focallength: i64
+    var scale: i64
+    var heightnumerator: i64
+    var viewx: i64
+    var viewy: i64
+    var viewsin: i64
+    var viewcos: i64
+    var midangle: i64
+    var postx: i64
+    var postwidth: i64
+    var postpic: i64
+    var postoff: i64
+    var lastside: i64
+    var lastintercept: i64
+    var lasttilehit: i64
+    var pixx: i64
+    var xtile: i64
+    var ytile: i64
+    var xtilestep: i64
+    var ytilestep: i64
+    var xintercept: i64
+    var yintercept: i64
+    var xstep: i64
+    var ystep: i64
+    var tilehit: u8
+    var xpartialup: i64
+    var xpartialdown: i64
+    var ypartialup: i64
+    var ypartialdown: i64
+    var focaltx: i64
+    var focalty: i64
+    var xinttile: i64
+    var yinttile: i64
+    var texdelta: i64
+    var vga_lin: f64[64]
+    var vga_ready: bool
+
+## WL_MAIN.C BuildTables + CalcProjection + SetupWalls
+pub func build_tables(r: Refresh*):
+    if r.built:
+        return
+    let radtoint = (f64)wl_def.fine_angles / 2.0 / math.pi
+    for i in 0..<(wl_def.fine_angles // 8):
+        let tang = math.tan(((f64)i + 0.5) / radtoint)
+        r.fine[(usize)i] = (i64)(tang * (f64)wl_def.tile_global)
+        r.fine[(usize)(wl_def.fine_angles // 4 - 1 - i)] = (i64)((1.0 / tang) * (f64)wl_def.tile_global)
+    var angle = 0.0
+    let anglestep = math.pi / 2.0 / (f64)wl_def.angle_quad
+    for i in 0..<wl_def.angle_quad:
+        let value = (i64)((f64)wl_def.tile_global * math.sin(angle))
+        r.sintable[(usize)i] = value
+        r.sintable[(usize)(i + wl_def.angles)] = value
+        r.sintable[(usize)(wl_def.angles // 2 - i)] = value
+        r.sintable[(usize)(wl_def.angles - i)] = 0 - value
+        r.sintable[(usize)(wl_def.angles // 2 + i)] = 0 - value
+        angle += anglestep
+    r.sintable[(usize)wl_def.angle_quad] = 65536
+    r.sintable[(usize)(3 * wl_def.angle_quad)] = 0 - 65536
+    r.horizwall[0] = 0
+    r.vertwall[0] = 0
+    for i in 1..<wl_def.max_wall_tiles:
+        r.horizwall[(usize)i] = ((i - 1) * 2)
+        r.vertwall[(usize)i] = ((i - 1) * 2 + 1)
+    r.focallength = wl_def.focal_length
+    let facedist = (f64)(r.focallength + wl_def.min_dist)
+    let halfview = wl_def.view_width // 2
+    r.scale = (i64)((f64)halfview * facedist / ((f64)wl_def.tile_global / 2.0))
+    r.heightnumerator = (wl_def.tile_global * r.scale) >> 6
+    for i in 0..<halfview:
+        let tang = (f64)((i64)i * wl_def.tile_global // wl_def.view_width) / facedist
+        let intang = (i64)(math.atan(tang) * radtoint)
+        r.pixelangle[(usize)(halfview - 1 - i)] = intang
+        r.pixelangle[(usize)(halfview + i)] = 0 - intang
+    r.built = true
+
+## costable = sintable + ANGLES/4
+func costable(r: Refresh*, angle: i64) -> i64:
+    var a = angle
+    while a < 0:
+        a += wl_def.angles
+    while a >= wl_def.angles:
+        a -= wl_def.angles
+    return r.sintable[(usize)(a + wl_def.angle_quad)]
+
+pub func three_d_refresh(game: Game*, r: Refresh*, raster: ui.Raster*) -> !:
+    build_tables(r)
+    for i in 0..<4096:
+        game.spotvis[i] = 0
+    let player_tile = game.tilemap[wl_def.cell(game.player.tilex, game.player.tiley)]
+    if player_tile == 0 or (player_tile & wl_def.bit_door) != 0:
+        game.spotvis[wl_def.cell(game.player.tilex, game.player.tiley)] = 1
+    setup_3d_view(game, r)
+    clear_view(game, r)
+    wall_refresh(game, r)
+    draw_scaleds(game, r)
+    draw_weapon(game, r)
+    draw_play_screen(game, r)
+    try blit(r, raster)
+
+## WL_DRAW.C Setup3DView
+func setup_3d_view(game: Game*, r: Refresh*):
+    var viewangle = game.player.angle
+    while viewangle < 0:
+        viewangle += wl_def.angles
+    while viewangle >= wl_def.angles:
+        viewangle -= wl_def.angles
+    r.midangle = viewangle * wl_def.fine_angles // wl_def.angles
+    r.viewsin = r.sintable[(usize)viewangle]
+    r.viewcos = costable(r, viewangle)
+    r.viewx = game.player.x - wl_def.fixed_mul(r.focallength, r.viewcos)
+    r.viewy = game.player.y + wl_def.fixed_mul(r.focallength, r.viewsin)
+    r.focaltx = r.viewx >> wl_def.tile_shift
+    r.focalty = r.viewy >> wl_def.tile_shift
+    r.xpartialdown = r.viewx & (wl_def.tile_global - 1)
+    r.xpartialup = wl_def.tile_global - r.xpartialdown
+    r.ypartialdown = r.viewy & (wl_def.tile_global - 1)
+    r.ypartialup = wl_def.tile_global - r.ypartialdown
+
+## WL_DRAW.C vgaCeiling[] episode 1
+func ceiling_color(mapon: i64) -> u8:
+    if mapon == 9:
+        return 0xbf
+    return 0x1d
+
+func clear_view(game: Game*, r: Refresh*):
+    let ceil = ceiling_color(game.mapon)
+    let floor: u8 = 0x19
+    for y in 0..<wl_def.view_height // 2:
+        let row = (usize)(y * wl_def.view_width)
+        for x in 0..<wl_def.view_width:
+            r.vbuf[row + (usize)x] = ceil
+    for y in (wl_def.view_height // 2)..<wl_def.view_height:
+        let row = (usize)(y * wl_def.view_width)
+        for x in 0..<wl_def.view_width:
+            r.vbuf[row + (usize)x] = floor
+    for y in wl_def.view_height..<wl_def.screen_height:
+        let row = (usize)(y * wl_def.view_width)
+        for x in 0..<wl_def.view_width:
+            r.vbuf[row + (usize)x] = 8
+
+## Wolf4SDL wl_draw.c WallRefresh. dest is vertentry/horizentry/passvert/passhoriz (no goto).
+func wall_refresh(game: Game*, r: Refresh*):
+    let vertloop: i64 = 1
+    let vertentry: i64 = 2
+    let passvert: i64 = 3
+    let horizloop: i64 = 4
+    let horizentry: i64 = 5
+    let passhoriz: i64 = 6
+    let done: i64 = 7
+    for pixx in 0..<wl_def.view_width:
+        r.pixx = pixx
+        r.wallheight[(usize)pixx] = 0
+        r.texdelta = 0
+        var angle = r.midangle + r.pixelangle[(usize)pixx]
+        if angle < 0:
+            angle += wl_def.ang360
+        if angle >= wl_def.ang360:
+            angle -= wl_def.ang360
+        var xpartial: i64 = 0
+        var ypartial: i64 = 0
+        if angle < wl_def.ang90:
+            r.xtilestep = 1
+            r.ytilestep = -1
+            r.xstep = r.fine[(usize)(wl_def.ang90 - 1 - angle)]
+            r.ystep = 0 - r.fine[(usize)angle]
+            xpartial = r.xpartialup
+            ypartial = r.ypartialdown
+        elif angle < wl_def.ang180:
+            r.xtilestep = -1
+            r.ytilestep = -1
+            r.xstep = 0 - r.fine[(usize)(angle - wl_def.ang90)]
+            r.ystep = 0 - r.fine[(usize)(wl_def.ang180 - 1 - angle)]
+            xpartial = r.xpartialdown
+            ypartial = r.ypartialdown
+        elif angle < wl_def.ang270:
+            r.xtilestep = -1
+            r.ytilestep = 1
+            r.xstep = 0 - r.fine[(usize)(wl_def.ang270 - 1 - angle)]
+            r.ystep = r.fine[(usize)(angle - wl_def.ang180)]
+            xpartial = r.xpartialdown
+            ypartial = r.ypartialup
+        else:
+            r.xtilestep = 1
+            r.ytilestep = 1
+            r.xstep = r.fine[(usize)(angle - wl_def.ang270)]
+            r.ystep = r.fine[(usize)(wl_def.ang360 - 1 - angle)]
+            xpartial = r.xpartialup
+            ypartial = r.ypartialup
+        r.yintercept = wl_def.fixed_mul(r.ystep, xpartial) + r.viewy
+        r.yinttile = r.yintercept >> wl_def.tile_shift
+        r.xtile = r.focaltx + r.xtilestep
+        r.xintercept = wl_def.fixed_mul(r.xstep, ypartial) + r.viewx
+        r.xinttile = r.xintercept >> wl_def.tile_shift
+        r.ytile = r.focalty + r.ytilestep
+        var dest = vertloop
+        var steps: i64 = 0
+        while dest != done and steps < 256:
+            steps += 1
+            if dest == vertloop:
+                if r.xtile - r.xtilestep == r.xinttile and r.ytile - r.ytilestep == r.yinttile:
+                    r.yinttile = r.ytile
+                if (r.ytilestep == -1 and r.yinttile <= r.ytile) or (r.ytilestep == 1 and r.yinttile >= r.ytile):
+                    dest = horizentry
+                else:
+                    dest = vertentry
+            elif dest == vertentry:
+                if r.xtile < 0 or r.xtile >= wl_def.map_size or r.yinttile < 0 or r.yinttile >= wl_def.map_size:
+                    dest = done
+                    continue
+                r.tilehit = game.tilemap[wl_def.cell(r.xtile, r.yinttile)]
+                if r.tilehit != 0:
+                    if (r.tilehit & wl_def.bit_door) != 0:
+                        let doornum = (i64)(r.tilehit & ~wl_def.bit_door)
+                        if doornum < 0 or doornum >= game.door_count:
+                            dest = passvert
+                            continue
+                        let door = game.doors[(usize)doornum]
+                        if door.action == wl_def.dr_open:
+                            dest = passvert
+                            continue
+                        let yinttemp = r.yintercept + (r.ystep >> 1)
+                        if yinttemp >> wl_def.tile_shift != r.yinttile:
+                            dest = passvert
+                            continue
+                        if door.action != wl_def.dr_closed and (yinttemp & 0xffff) < door.position:
+                            dest = passvert
+                            continue
+                        r.yintercept = yinttemp
+                        r.xintercept = (r.xtile << wl_def.tile_shift) + wl_def.tile_global // 2
+                        hit_vert_door(game, r)
+                        dest = done
+                    elif r.tilehit == wl_def.bit_wall:
+                        if hit_vert_pwall(game, r):
+                            dest = done
+                        else:
+                            dest = passvert
+                            continue
+                    else:
+                        r.xintercept = r.xtile << wl_def.tile_shift
+                        hit_vert_wall(game, r)
+                        dest = done
+                else:
+                    dest = passvert
+            elif dest == passvert:
+                game.spotvis[wl_def.cell(r.xtile, r.yinttile)] = 1
+                r.xtile += r.xtilestep
+                r.yintercept += r.ystep
+                r.yinttile = r.yintercept >> wl_def.tile_shift
+                dest = vertloop
+            elif dest == horizloop:
+                if r.xtile - r.xtilestep == r.xinttile and r.ytile - r.ytilestep == r.yinttile:
+                    r.xinttile = r.xtile
+                if (r.xtilestep == -1 and r.xinttile <= r.xtile) or (r.xtilestep == 1 and r.xinttile >= r.xtile):
+                    dest = vertentry
+                else:
+                    dest = horizentry
+            elif dest == horizentry:
+                if r.xinttile < 0 or r.xinttile >= wl_def.map_size or r.ytile < 0 or r.ytile >= wl_def.map_size:
+                    dest = done
+                    continue
+                r.tilehit = game.tilemap[wl_def.cell(r.xinttile, r.ytile)]
+                if r.tilehit != 0:
+                    if (r.tilehit & wl_def.bit_door) != 0:
+                        let doornum = (i64)(r.tilehit & ~wl_def.bit_door)
+                        if doornum < 0 or doornum >= game.door_count:
+                            dest = passhoriz
+                            continue
+                        let door = game.doors[(usize)doornum]
+                        if door.action == wl_def.dr_open:
+                            dest = passhoriz
+                            continue
+                        let xinttemp = r.xintercept + (r.xstep >> 1)
+                        if xinttemp >> wl_def.tile_shift != r.xinttile:
+                            dest = passhoriz
+                            continue
+                        if door.action != wl_def.dr_closed and (xinttemp & 0xffff) < door.position:
+                            dest = passhoriz
+                            continue
+                        r.xintercept = xinttemp
+                        r.yintercept = (r.ytile << wl_def.tile_shift) + wl_def.tile_global // 2
+                        hit_horiz_door(game, r)
+                        dest = done
+                    elif r.tilehit == wl_def.bit_wall:
+                        if hit_horiz_pwall(game, r):
+                            dest = done
+                        else:
+                            dest = passhoriz
+                            continue
+                    else:
+                        r.yintercept = r.ytile << wl_def.tile_shift
+                        hit_horiz_wall(game, r)
+                        dest = done
+                else:
+                    dest = passhoriz
+            else:
+                game.spotvis[wl_def.cell(r.xinttile, r.ytile)] = 1
+                r.ytile += r.ytilestep
+                r.xintercept += r.xstep
+                r.xinttile = r.xintercept >> wl_def.tile_shift
+                dest = horizloop
+
+func calc_height(r: Refresh*) -> i64:
+    let gx = r.xintercept - r.viewx
+    let gxt = wl_def.fixed_mul(gx, r.viewcos)
+    let gy = r.yintercept - r.viewy
+    let gyt = wl_def.fixed_mul(gy, r.viewsin)
+    var nx = gxt - gyt
+    if nx < wl_def.min_dist:
+        nx = wl_def.min_dist
+    return r.heightnumerator // (nx >> 8)
+
+func hit_vert_wall(game: Game*, r: Refresh*):
+    var texture = ((r.yintercept - r.texdelta) >> 4) & 0xfc0
+    if r.xtilestep == -1:
+        texture = 0xfc0 - texture
+        r.xintercept += wl_def.tile_global
+    r.wallheight[(usize)r.pixx] = calc_height(r)
+    var wallpic: i64 = 0
+    if (r.tilehit & wl_def.bit_wall) != 0:
+        let side_x = r.xtile - r.xtilestep
+        if side_x >= 0 and side_x < wl_def.map_size and r.yinttile >= 0 and r.yinttile < wl_def.map_size and (game.tilemap[wl_def.cell(side_x, r.yinttile)] & wl_def.bit_door) != 0:
+            wallpic = game.pages.door_wall() + 3
+        else:
+            wallpic = vert_wall_pic(r, (i64)(r.tilehit & ~wl_def.bit_wall))
+    else:
+        wallpic = vert_wall_pic(r, (i64)r.tilehit)
+    finish_post(game, r, true, r.xtile, wallpic, texture)
+
+func hit_horiz_wall(game: Game*, r: Refresh*):
+    var texture = ((r.xintercept - r.texdelta) >> 4) & 0xfc0
+    if r.ytilestep == -1:
+        r.yintercept += wl_def.tile_global
+    else:
+        texture = 0xfc0 - texture
+    r.wallheight[(usize)r.pixx] = calc_height(r)
+    var wallpic: i64 = 0
+    if (r.tilehit & wl_def.bit_wall) != 0:
+        let side_y = r.ytile - r.ytilestep
+        if r.xinttile >= 0 and r.xinttile < wl_def.map_size and side_y >= 0 and side_y < wl_def.map_size and (game.tilemap[wl_def.cell(r.xinttile, side_y)] & wl_def.bit_door) != 0:
+            wallpic = game.pages.door_wall() + 2
+        else:
+            wallpic = horiz_wall_pic(r, (i64)(r.tilehit & ~wl_def.bit_wall))
+    else:
+        wallpic = horiz_wall_pic(r, (i64)r.tilehit)
+    finish_post(game, r, false, r.ytile, wallpic, texture)
+
+func vert_wall_pic(r: Refresh*, wall: i64) -> i64:
+    var w = wall
+    if w <= 0 or w >= wl_def.max_wall_tiles:
+        w = 1
+    return r.vertwall[(usize)w]
+
+func horiz_wall_pic(r: Refresh*, wall: i64) -> i64:
+    var w = wall
+    if w <= 0 or w >= wl_def.max_wall_tiles:
+        w = 1
+    return r.horizwall[(usize)w]
+
+## WL_DRAW.C HitVertDoor — texture = ((word)yintercept - doorposition) >> 4
+func hit_vert_door(game: Game*, r: Refresh*):
+    let doornum = (i64)(r.tilehit & ~wl_def.bit_door)
+    var pos: i64 = 0
+    if doornum >= 0 and doornum < game.door_count:
+        pos = game.doors[(usize)doornum].position
+    let texture = door_texture(r.yintercept, pos)
+    r.wallheight[(usize)r.pixx] = calc_height(r)
+    finish_post(game, r, true, r.xtile, door_pic(game, doornum, true), texture)
+
+## WL_DRAW.C HitHorizDoor
+func hit_horiz_door(game: Game*, r: Refresh*):
+    let doornum = (i64)(r.tilehit & ~wl_def.bit_door)
+    var pos: i64 = 0
+    if doornum >= 0 and doornum < game.door_count:
+        pos = game.doors[(usize)doornum].position
+    let texture = door_texture(r.xintercept, pos)
+    r.wallheight[(usize)r.pixx] = calc_height(r)
+    finish_post(game, r, false, r.ytile, door_pic(game, doornum, false), texture)
+
+func door_texture(intercept: i64, position: i64) -> i64:
+    let frac = intercept & 0xffff
+    var delta = frac - (position & 0xffff)
+    if delta < 0:
+        delta += 0x10000
+    return (delta >> 4) & 0xfc0
+
+func door_pic(game: Game*, doornum: i64, vertical: bool) -> i64:
+    var page = game.pages.door_wall()
+    if vertical:
+        page += 1
+    var lock: i64 = 0
+    if doornum >= 0 and doornum < game.door_count:
+        lock = game.doors[(usize)doornum].lock
+    if lock >= 1 and lock <= 4:
+        page += 6
+    elif lock == 5:
+        page += 4
+    return page
+
+## Wolf4SDL WallRefresh sliding vertical pushwall. true = drew, false = passvert.
+func hit_vert_pwall(game: Game*, r: Refresh*) -> bool:
+    let pwalldir = game.pwalldir
+    let pwallpos = game.pwallpos
+    if pwalldir == wl_def.west or pwalldir == wl_def.east:
+        var pwallposnorm = pwallpos
+        var pwallposinv = 64 - pwallpos
+        if pwalldir == wl_def.west:
+            pwallposnorm = 64 - pwallpos
+            pwallposinv = pwallpos
+        let at_pwall = r.xtile == game.pwallx and r.yinttile == game.pwally
+        if (pwalldir == wl_def.east and at_pwall) or (pwalldir == wl_def.west and not at_pwall):
+            let yinttemp = r.yintercept + ((r.ystep * pwallposnorm) >> 6)
+            if yinttemp >> wl_def.tile_shift != r.yinttile:
+                return false
+            r.yintercept = yinttemp
+            r.xintercept = ((r.xtile << wl_def.tile_shift) + wl_def.tile_global) - (pwallposinv << 10)
+            r.yinttile = r.yintercept >> wl_def.tile_shift
+            r.tilehit = (u8)game.pwalltile
+            hit_vert_wall(game, r)
+            return true
+        let yinttemp = r.yintercept + ((r.ystep * pwallposinv) >> 6)
+        if yinttemp >> wl_def.tile_shift != r.yinttile:
+            return false
+        r.yintercept = yinttemp
+        r.xintercept = (r.xtile << wl_def.tile_shift) - (pwallposinv << 10)
+        r.yinttile = r.yintercept >> wl_def.tile_shift
+        r.tilehit = (u8)game.pwalltile
+        hit_vert_wall(game, r)
+        return true
+    var pwallposi = pwallpos
+    if pwalldir == wl_def.north:
+        pwallposi = 64 - pwallpos
+    let yword = r.yintercept & 0xffff
+    let edge = pwallposi << 10
+    if (pwalldir == wl_def.south and yword < edge) or (pwalldir == wl_def.north and yword > edge):
+        if r.xtile == game.pwallx and r.yinttile == game.pwally:
+            if (pwalldir == wl_def.south and yword + r.ystep < edge) or (pwalldir == wl_def.north and yword + r.ystep > edge):
+                return false
+            if pwalldir == wl_def.south:
+                r.yintercept = (r.yinttile << wl_def.tile_shift) + edge
+            else:
+                r.yintercept = ((r.yinttile << wl_def.tile_shift) - wl_def.tile_global) + edge
+            r.xintercept -= (r.xstep * (64 - pwallpos)) >> 6
+            r.xinttile = r.xintercept >> wl_def.tile_shift
+            r.tilehit = (u8)game.pwalltile
+            hit_horiz_wall(game, r)
+            return true
+        r.texdelta = edge
+        r.xintercept = r.xtile << wl_def.tile_shift
+        r.tilehit = (u8)game.pwalltile
+        hit_vert_wall(game, r)
+        return true
+    if r.xtile == game.pwallx and r.yinttile == game.pwally:
+        r.texdelta = edge
+        r.xintercept = r.xtile << wl_def.tile_shift
+        r.tilehit = (u8)game.pwalltile
+        hit_vert_wall(game, r)
+        return true
+    if (pwalldir == wl_def.south and yword + r.ystep > edge) or (pwalldir == wl_def.north and yword + r.ystep < edge):
+        return false
+    if pwalldir == wl_def.south:
+        r.yintercept = (r.yinttile << wl_def.tile_shift) - ((64 - pwallpos) << 10)
+    else:
+        r.yintercept = (r.yinttile << wl_def.tile_shift) + ((64 - pwallpos) << 10)
+    r.xintercept -= (r.xstep * pwallpos) >> 6
+    r.xinttile = r.xintercept >> wl_def.tile_shift
+    r.tilehit = (u8)game.pwalltile
+    hit_horiz_wall(game, r)
+    return true
+
+func hit_horiz_pwall(game: Game*, r: Refresh*) -> bool:
+    let pwalldir = game.pwalldir
+    let pwallpos = game.pwallpos
+    if pwalldir == wl_def.north or pwalldir == wl_def.south:
+        var pwallposnorm = pwallpos
+        var pwallposinv = 64 - pwallpos
+        if pwalldir == wl_def.north:
+            pwallposnorm = 64 - pwallpos
+            pwallposinv = pwallpos
+        let at_pwall = r.xinttile == game.pwallx and r.ytile == game.pwally
+        if (pwalldir == wl_def.south and at_pwall) or (pwalldir == wl_def.north and not at_pwall):
+            let xinttemp = r.xintercept + ((r.xstep * pwallposnorm) >> 6)
+            if xinttemp >> wl_def.tile_shift != r.xinttile:
+                return false
+            r.xintercept = xinttemp
+            r.yintercept = ((r.ytile << wl_def.tile_shift) + wl_def.tile_global) - (pwallposinv << 10)
+            r.xinttile = r.xintercept >> wl_def.tile_shift
+            r.tilehit = (u8)game.pwalltile
+            hit_horiz_wall(game, r)
+            return true
+        let xinttemp = r.xintercept + ((r.xstep * pwallposinv) >> 6)
+        if xinttemp >> wl_def.tile_shift != r.xinttile:
+            return false
+        r.xintercept = xinttemp
+        r.yintercept = (r.ytile << wl_def.tile_shift) - (pwallposinv << 10)
+        r.xinttile = r.xintercept >> wl_def.tile_shift
+        r.tilehit = (u8)game.pwalltile
+        hit_horiz_wall(game, r)
+        return true
+    var pwallposi = pwallpos
+    if pwalldir == wl_def.west:
+        pwallposi = 64 - pwallpos
+    let xword = r.xintercept & 0xffff
+    let edge = pwallposi << 10
+    if (pwalldir == wl_def.east and xword < edge) or (pwalldir == wl_def.west and xword > edge):
+        if r.xinttile == game.pwallx and r.ytile == game.pwally:
+            if (pwalldir == wl_def.east and xword + r.xstep < edge) or (pwalldir == wl_def.west and xword + r.xstep > edge):
+                return false
+            r.yintercept -= (r.ystep * (64 - pwallpos)) >> 6
+            r.yinttile = r.yintercept >> wl_def.tile_shift
+            if pwalldir == wl_def.east:
+                r.xintercept = (r.xinttile << wl_def.tile_shift) + edge
+            else:
+                r.xintercept = ((r.xinttile << wl_def.tile_shift) - wl_def.tile_global) + edge
+            r.tilehit = (u8)game.pwalltile
+            hit_vert_wall(game, r)
+            return true
+        r.texdelta = edge
+        r.yintercept = r.ytile << wl_def.tile_shift
+        r.tilehit = (u8)game.pwalltile
+        hit_horiz_wall(game, r)
+        return true
+    if r.xinttile == game.pwallx and r.ytile == game.pwally:
+        r.texdelta = edge
+        r.yintercept = r.ytile << wl_def.tile_shift
+        r.tilehit = (u8)game.pwalltile
+        hit_horiz_wall(game, r)
+        return true
+    if (pwalldir == wl_def.east and xword + r.xstep > edge) or (pwalldir == wl_def.west and xword + r.xstep < edge):
+        return false
+    r.yintercept -= (r.ystep * pwallpos) >> 6
+    r.yinttile = r.yintercept >> wl_def.tile_shift
+    if pwalldir == wl_def.east:
+        r.xintercept = (r.xinttile << wl_def.tile_shift) - ((64 - pwallpos) << 10)
+    else:
+        r.xintercept = (r.xinttile << wl_def.tile_shift) + ((64 - pwallpos) << 10)
+    r.tilehit = (u8)game.pwalltile
+    hit_vert_wall(game, r)
+    return true
+
+func finish_post(game: Game*, r: Refresh*, vertical: bool, intercept: i64, pic: i64, texture: i64):
+    discard(vertical)
+    discard(intercept)
+    r.postx = r.pixx
+    r.postwidth = 1
+    r.postpic = pic
+    r.postoff = texture
+    scale_post(game, r)
+
+func scale_post(game: Game*, r: Refresh*):
+    if r.postwidth <= 0 or r.postx < 0:
+        return
+    let page = game.pages.wall(r.postpic) catch failure:
+        discard(failure)
+        return
+    var ywcount = r.wallheight[(usize)r.postx] >> 3
+    var yd = ywcount
+    if yd <= 0:
+        yd = 100
+    let centery = wl_def.view_height // 2
+    var yoffs = centery - ywcount
+    if yoffs < 0:
+        yoffs = 0
+    var yendoffs = centery + ywcount - 1
+    var yw = wl_def.texture_size - 1
+    while yendoffs >= wl_def.view_height:
+        ywcount -= wl_def.texture_size // 2
+        while ywcount <= 0:
+            ywcount += yd
+            yw -= 1
+        yendoffs -= 1
+    if yw < 0:
+        return
+    let src = (usize)r.postoff + (usize)yw
+    var col: u8 = 0
+    if src < page.length:
+        col = page[src]
+    let x = r.postx
+    if x < 0 or x >= wl_def.view_width:
+        return
+    while yoffs <= yendoffs:
+        r.vbuf[(usize)(yendoffs * wl_def.view_width + x)] = col
+        ywcount -= wl_def.texture_size // 2
+        if ywcount <= 0:
+            while ywcount <= 0:
+                ywcount += yd
+                yw -= 1
+            if yw < 0:
+                break
+            let src2 = (usize)r.postoff + (usize)yw
+            if src2 < page.length:
+                col = page[src2]
+        yendoffs -= 1
+
+struct Vis:
+    var viewx: i64
+    var viewheight: i64
+    var shapenum: i64
+
+func draw_scaleds(game: Game*, r: Refresh*):
+    ## WL_DRAW.C DrawScaleds — collect, then draw farthest (smallest viewheight) first.
+    var vis: Vis[50]
+    var n: i64 = 0
+    for i in 0..<game.static_count:
+        let obj = game.statics[(usize)i]
+        if obj.shapenum < 0:
+            continue
+        if game.spotvis[wl_def.cell(obj.tilex, obj.tiley)] == 0:
+            continue
+        let proj = project_tile(r, obj.tilex, obj.tiley)
+        if proj.viewheight == 0:
+            continue
+        if n < wl_def.max_visable:
+            vis[(usize)n] = Vis(viewx = proj.viewx, viewheight = proj.viewheight, shapenum = obj.shapenum)
+            n += 1
+    for i in 0..<game.actor_count:
+        let actor = &game.actors[(usize)i]
+        if let st = actor.state:
+            if st.shapenum <= 0:
+                actor.flags = actor.flags & ~wl_def.fl_visable
+                continue
+            if not tile_spotted(game, actor.tilex, actor.tiley):
+                actor.flags = actor.flags & ~wl_def.fl_visable
+                continue
+            transform_actor(r, actor)
+            if actor.viewheight == 0:
+                actor.flags = actor.flags & ~wl_def.fl_visable
+                continue
+            actor.flags = actor.flags | wl_def.fl_visable
+            var shape = st.shapenum
+            if st.rotate != 0:
+                shape += calc_rotate(game, game.actors[(usize)i], st.rotate)
+            if n < wl_def.max_visable:
+                vis[(usize)n] = Vis(viewx = actor.viewx, viewheight = actor.viewheight, shapenum = shape)
+                n += 1
+        else:
+            actor.flags = actor.flags & ~wl_def.fl_visable
+    var left = n
+    while left > 0:
+        var farthest: i64 = 0
+        var least = vis[0].viewheight
+        var v: i64 = 1
+        while v < left:
+            if vis[(usize)v].viewheight < least:
+                least = vis[(usize)v].viewheight
+                farthest = v
+            v += 1
+        let draw = vis[(usize)farthest]
+        scale_shape(game, r, draw.viewx, draw.shapenum, draw.viewheight)
+        left -= 1
+        vis[(usize)farthest] = vis[(usize)left]
+
+func project_tile(r: Refresh*, tilex: i64, tiley: i64) -> Vis:
+    let gx = (tilex << wl_def.tile_shift) + wl_def.tile_global // 2 - r.viewx
+    let gy = (tiley << wl_def.tile_shift) + wl_def.tile_global // 2 - r.viewy
+    let gxt = wl_def.fixed_mul(gx, r.viewcos)
+    let gyt = wl_def.fixed_mul(gy, r.viewsin)
+    var nx = gxt - gyt - 0x2000
+    let ny = wl_def.fixed_mul(gx, r.viewsin) + wl_def.fixed_mul(gy, r.viewcos)
+    if nx < wl_def.min_dist:
+        return Vis()
+    return Vis(viewx = wl_def.view_width // 2 + ny * r.scale // nx,
+        viewheight = r.heightnumerator // (nx >> 8))
+
+func tile_spotted(game: Game*, tilex: i64, tiley: i64) -> bool:
+    var dx: i64 = -1
+    while dx <= 1:
+        var dy: i64 = -1
+        while dy <= 1:
+            let x = tilex + dx
+            let y = tiley + dy
+            if x >= 0 and y >= 0 and x < wl_def.map_size and y < wl_def.map_size:
+                if game.spotvis[wl_def.cell(x, y)] != 0:
+                    return true
+            dy += 1
+        dx += 1
+    return false
+
+## WL_DRAW.C TransformActor
+func transform_actor(r: Refresh*, actor: Actor*):
+    let gx = actor.x - r.viewx
+    let gy = actor.y - r.viewy
+    let gxt = wl_def.fixed_mul(gx, r.viewcos)
+    let gyt = wl_def.fixed_mul(gy, r.viewsin)
+    var nx = gxt - gyt - wl_def.actor_size
+    let ny = wl_def.fixed_mul(gx, r.viewsin) + wl_def.fixed_mul(gy, r.viewcos)
+    actor.transx = nx
+    if nx < wl_def.min_dist:
+        actor.viewheight = 0
+        return
+    actor.viewx = wl_def.view_width // 2 + ny * r.scale // nx
+    actor.viewheight = r.heightnumerator // (nx >> 8)
+
+func calc_rotate(game: Game*, actor: Actor, rotate: i64) -> i64:
+    ## WL_DRAW.C CalcRotate. dirangle[dir] = dir*45 with east=0.
+    ## rotate==2 is the 2-way pain layout (PAIN_1 and PAIN_2 are 4 shapes apart).
+    var viewangle = game.player.angle + (wl_def.view_width // 2 - actor.viewx) // 8
+    var angle = viewangle - 180
+    if actor.dir != wl_def.nodir:
+        angle = viewangle - 180 - actor.dir * 45
+    angle += wl_def.angles // 16
+    while angle >= wl_def.angles:
+        angle -= wl_def.angles
+    while angle < 0:
+        angle += wl_def.angles
+    if rotate == 2:
+        return 4 * (angle // (wl_def.angles // 2))
+    return angle // (wl_def.angles // 8)
+
+func draw_sprite(game: Game*, r: Refresh*, tilex: i64, tiley: i64, shapenum: i64, tile_center: bool):
+    let gx = (tilex << wl_def.tile_shift) + wl_def.tile_global // 2 - r.viewx
+    let gy = (tiley << wl_def.tile_shift) + wl_def.tile_global // 2 - r.viewy
+    let gxt = wl_def.fixed_mul(gx, r.viewcos)
+    let gyt = wl_def.fixed_mul(gy, r.viewsin)
+    var nx = gxt - gyt - 0x2000
+    let nx2 = wl_def.fixed_mul(gx, r.viewsin) + wl_def.fixed_mul(gy, r.viewcos)
+    if nx < wl_def.min_dist:
+        return
+    let height = r.heightnumerator // (nx >> 8)
+    let viewx = wl_def.view_width // 2 + nx2 * r.scale // nx
+    scale_shape(game, r, viewx, shapenum, height)
+    discard(tile_center)
+
+func scale_shape(game: Game*, r: Refresh*, xcenter: i64, shapenum: i64, height: i64):
+    let scale = height >> 3
+    if scale <= 0:
+        return
+    let linesrc = game.pages.sprite(shapenum) catch failure:
+        discard(failure)
+        return
+    if linesrc.length < 8:
+        return
+    var leftpix = (i64)wl_def.u16le(linesrc, 0)
+    var rightpix = (i64)wl_def.u16le(linesrc, 2)
+    if leftpix < 0:
+        leftpix = 0
+    if rightpix > 63:
+        rightpix = 63
+    if leftpix > rightpix:
+        return
+    let fracstep = (scale << 16) // 32
+    if fracstep <= 0:
+        return
+    var frac = leftpix * fracstep
+    let actx = xcenter - scale
+    let toppix = wl_def.view_height // 2 - scale
+    var x2 = (frac >> 16) + actx
+    var i = leftpix
+    while i <= rightpix:
+        let x1 = x2
+        frac += fracstep
+        x2 = (frac >> 16) + actx
+        if x1 >= wl_def.view_width:
+            break
+        if x2 >= 0:
+            var xa = x1
+            if xa < 0:
+                xa = 0
+            var xb = x2
+            if xb > wl_def.view_width:
+                xb = wl_def.view_width
+            let idx = (usize)((i - leftpix) * 2 + 4)
+            if idx + 1 < linesrc.length:
+                let cmd = (usize)wl_def.u16le(linesrc, idx)
+                var x = xa
+                while x < xb:
+                    if x >= 0 and x < wl_def.view_width and r.wallheight[(usize)x] < height:
+                        scale_line(r, x, toppix, fracstep, linesrc, cmd)
+                    x += 1
+        i += 1
+
+## WL_SCALE.C ScaleLine — end/start are signed pixel*2; 0 terminates the column.
+func i16le(data: const u8[], off: usize) -> i64:
+    let u = (i64)wl_def.u16le(data, off)
+    if u >= 32768:
+        return u - 65536
+    return u
+
+func scale_line(r: Refresh*, x: i64, toppix: i64, fracstep: i64, linesrc: const u8[], cmd: usize):
+    var off = cmd
+    var segs: i64 = 0
+    while off + 5 < linesrc.length and segs < 64:
+        segs += 1
+        let endy = i16le(linesrc, off) >> 1
+        if endy == 0:
+            return
+        let top = i16le(linesrc, off + 2)
+        var pix = i16le(linesrc, off + 4) >> 1
+        if pix < 0:
+            pix = 0
+        var frac = pix * fracstep
+        var steps: i64 = 0
+        while pix != endy and steps < 64:
+            steps += 1
+            let startpix = (frac >> 16) + toppix
+            frac += fracstep
+            var endpix = (frac >> 16) + toppix
+            if startpix < wl_def.view_height and endpix > 0:
+                var a = startpix
+                if a < 0:
+                    a = 0
+                var b = endpix
+                if b > wl_def.view_height:
+                    b = wl_def.view_height
+                let src = top + pix
+                if src >= 0 and src < (i64)linesrc.length:
+                    let col = linesrc[(usize)src]
+                    var y = a
+                    while y < b:
+                        r.vbuf[(usize)(y * wl_def.view_width + x)] = col
+                        y += 1
+            if pix < endy:
+                pix += 1
+            else:
+                pix -= 1
+        off += 6
+
+func draw_weapon(game: Game*, r: Refresh*):
+    ## WL_DRAW.C DrawPlayerWeapon / weaponscale[]
+    var ready = wl_def.spr_knife_ready
+    if game.weapon == wl_def.wp_pistol:
+        ready = wl_def.spr_pistolready
+    elif game.weapon == wl_def.wp_machinegun:
+        ready = wl_def.spr_machinegun_ready
+    elif game.weapon == wl_def.wp_chaingun:
+        ready = wl_def.spr_chain_ready
+    var frame = game.weaponframe
+    if frame < 0:
+        frame = 0
+    if frame > 4:
+        frame = 4
+    simple_scale_shape(game, r, wl_def.view_width // 2, ready + frame, wl_def.view_height + 1)
+
+func simple_scale_shape(game: Game*, r: Refresh*, xcenter: i64, shapenum: i64, height: i64):
+    let scale = height >> 1
+    if scale <= 0:
+        return
+    let linesrc = game.pages.sprite(shapenum) catch failure:
+        discard(failure)
+        return
+    if linesrc.length < 8:
+        return
+    var leftpix = (i64)wl_def.u16le(linesrc, 0)
+    var rightpix = (i64)wl_def.u16le(linesrc, 2)
+    if leftpix < 0:
+        leftpix = 0
+    if rightpix > 63:
+        rightpix = 63
+    if leftpix > rightpix:
+        return
+    let fracstep = (scale << 16) // 32
+    if fracstep <= 0:
+        return
+    var frac = leftpix * fracstep
+    let actx = xcenter - scale
+    let toppix = wl_def.view_height // 2 - scale
+    var x2 = (frac >> 16) + actx
+    var i = leftpix
+    while i <= rightpix:
+        let x1 = x2
+        frac += fracstep
+        x2 = (frac >> 16) + actx
+        var x = x1
+        while x < x2:
+            if x >= 0 and x < wl_def.view_width:
+                let idx = (usize)((i - leftpix) * 2 + 4)
+                if idx + 1 < linesrc.length:
+                    let cmd = (usize)wl_def.u16le(linesrc, idx)
+                    scale_line(r, x, toppix, fracstep, linesrc, cmd)
+            x += 1
+        i += 1
+
+## WL_GAME.C DrawPlayScreen — status bar is latched in DOS; we composite into vbuf.
+func draw_play_screen(game: Game*, r: Refresh*):
+    vwb_draw_pic(r, 0, wl_def.screen_height - wl_def.status_lines, &game.statusbar)
+    draw_face(game, r)
+    latch_number(game, r, 21, 16, 3, game.health)
+    latch_number(game, r, 14, 16, 1, game.lives)
+    latch_number(game, r, 2, 16, 2, game.mapon + 1)
+    latch_number(game, r, 27, 16, 2, game.ammo)
+    latch_number(game, r, 6, 16, 6, game.score)
+    status_draw_pic(game, r, 32, 8, wl_def.knife_pic + game.weapon)
+    if (game.keys & 1) != 0:
+        status_draw_pic(game, r, 30, 4, wl_def.gold_key_pic)
+    else:
+        status_draw_pic(game, r, 30, 4, wl_def.no_key_pic)
+    if (game.keys & 2) != 0:
+        status_draw_pic(game, r, 30, 20, wl_def.silver_key_pic)
+    else:
+        status_draw_pic(game, r, 30, 20, wl_def.no_key_pic)
+
+func draw_face(game: Game*, r: Refresh*):
+    if game.gatling_face > 0:
+        status_draw_pic(game, r, 17, 4, wl_def.got_gatling_pic)
+    elif game.health > 0:
+        var face = 100 - game.health
+        if face < 0:
+            face = 0
+        status_draw_pic(game, r, 17, 4, wl_def.face1a_pic + 3 * (face // 16) + game.faceframe)
+    else:
+        status_draw_pic(game, r, 17, 4, wl_def.face8a_pic)
+
+func latch_number(game: Game*, r: Refresh*, x: i64, y: i64, width: i64, number: i64):
+    var n = number
+    if n < 0:
+        n = 0
+    var digits: i64[12]
+    var length: i64 = 0
+    if n == 0:
+        digits[0] = 0
+        length = 1
+    else:
+        var rev: i64[12]
+        var rl: i64 = 0
+        var tmp = n
+        while tmp > 0:
+            rev[(usize)rl] = tmp % 10
+            rl += 1
+            tmp = tmp // 10
+        var i: i64 = 0
+        while i < rl:
+            digits[(usize)i] = rev[(usize)(rl - 1 - i)]
+            i += 1
+        length = rl
+    var cx = x
+    var w = width
+    while length < w:
+        status_draw_pic(game, r, cx, y, wl_def.n_blank_pic)
+        cx += 1
+        w -= 1
+    var index = 0 if length <= w else length - w
+    while index < length:
+        status_draw_pic(game, r, cx, y, wl_def.n_0_pic + digits[(usize)index])
+        cx += 1
+        index += 1
+
+func status_draw_pic(game: Game*, r: Refresh*, x: i64, y: i64, chunk: i64):
+    vwb_draw_pic(r, x * 8, wl_def.screen_height - wl_def.status_lines + y, wl_types.latch_pic(game, chunk))
+
+pub func vwb_bar(r: Refresh*, x: i64, y: i64, w: i64, h: i64, color: u8):
+    var row = y
+    while row < y + h:
+        var col = x
+        while col < x + w:
+            plot(r, col, row, color)
+            col += 1
+        row += 1
+
+pub func vwb_hlin(r: Refresh*, x1: i64, x2: i64, y: i64, color: u8):
+    var x = x1
+    while x <= x2:
+        plot(r, x, y, color)
+        x += 1
+
+pub func vwb_vlin(r: Refresh*, y1: i64, y2: i64, x: i64, color: u8):
+    var y = y1
+    while y <= y2:
+        plot(r, x, y, color)
+        y += 1
+
+pub func vwb_pic(r: Refresh*, x: i64, y: i64, pic: id_graph.Pic*):
+    vwb_draw_pic(r, x, y, pic)
+
+func plot(r: Refresh*, x: i64, y: i64, color: u8):
+    if x < 0 or y < 0 or x >= wl_def.view_width or y >= wl_def.screen_height:
+        return
+    r.vbuf[(usize)(y * wl_def.view_width + x)] = color
+
+pub func draw_outline(r: Refresh*, x: i64, y: i64, w: i64, h: i64, c1: u8, c2: u8):
+    vwb_hlin(r, x, x + w, y, c2)
+    vwb_vlin(r, y, y + h, x, c2)
+    vwb_hlin(r, x, x + w, y + h, c1)
+    vwb_vlin(r, y, y + h, x + w, c1)
+
+pub func draw_window(r: Refresh*, x: i64, y: i64, w: i64, h: i64, fill: u8):
+    vwb_bar(r, x, y, w, h, fill)
+    draw_outline(r, x, y, w, h, wl_def.bord2_color, wl_def.deactive_color)
+
+pub func font_height(font: id_graph.Pic*) -> i64:
+    if font.pixels.length < 2:
+        return 8
+    return (i64)wl_def.u16le(font.pixels, 0)
+
+pub func font_width(font: id_graph.Pic*, ch: i64) -> i64:
+    let off = 514 + ch
+    if ch < 0 or ch > 255 or off >= (i64)font.pixels.length:
+        return 0
+    return (i64)font.pixels[(usize)off]
+
+pub func draw_char(r: Refresh*, font: id_graph.Pic*, x: i64, y: i64, ch: i64, color: u8) -> i64:
+    let w = font_width(font, ch)
+    let h = font_height(font)
+    if w <= 0 or font.pixels.length < 4:
+        return w
+    let loc = (i64)wl_def.u16le(font.pixels, (usize)(2 + ch * 2))
+    var col: i64 = 0
+    while col < w:
+        var row: i64 = 0
+        while row < h:
+            let src = loc + row * w + col
+            if src >= 0 and src < (i64)font.pixels.length and font.pixels[(usize)src] != 0:
+                plot(r, x + col, y + row, color)
+            row += 1
+        col += 1
+    return w
+
+pub func draw_text(r: Refresh*, font: id_graph.Pic*, x: i64, y: i64, text: const u8[], color: u8) -> i64:
+    var cx = x
+    var cy = y
+    var i: usize = 0
+    while i < text.length:
+        let ch = (i64)text[i]
+        if ch == 10:
+            cx = x
+            cy += font_height(font)
+        else:
+            cx += draw_char(r, font, cx, cy, ch, color)
+        i += 1
+    return cx
+
+pub func measure_text(font: id_graph.Pic*, text: const u8[]) -> i64:
+    var w: i64 = 0
+    var i: usize = 0
+    while i < text.length:
+        w += font_width(font, (i64)text[i])
+        i += 1
+    return w
+
+func vwb_draw_pic(r: Refresh*, x: i64, y: i64, pic: id_graph.Pic*):
+    if pic.pixels.length == 0 or pic.width <= 0 or pic.height <= 0:
+        return
+    let px = x & ~7
+    let py = y
+    var row: i64 = 0
+    while row < pic.height:
+        var col: i64 = 0
+        while col < pic.width:
+            let sx = px + col
+            let sy = py + row
+            if sx >= 0 and sx < wl_def.view_width and sy >= 0 and sy < wl_def.screen_height:
+                let src = (usize)(row * pic.width + col)
+                if src < pic.pixels.length:
+                    r.vbuf[(usize)(sy * wl_def.view_width + sx)] = pic.pixels[src]
+            col += 1
+        row += 1
+
+pub func write_ppm(r: Refresh*, path: str) -> !:
+    var out: u8[192128]
+    let header = b"P6\n320 200\n255\n"
+    var n: usize = 0
+    for b in header:
+        out[n] = b
+        n += 1
+    for y in 0..<wl_def.screen_height:
+        for x in 0..<wl_def.view_width:
+            let i = (usize)r.vbuf[(usize)(y * wl_def.view_width + x)] * 3
+            out[n] = (u8)((u16)pal.pal[i] * 255 // 63)
+            out[n + 1] = (u8)((u16)pal.pal[i + 1] * 255 // 63)
+            out[n + 2] = (u8)((u16)pal.pal[i + 2] * 255 // 63)
+            n += 3
+    try files.write((c.str)path, out[0..<n])
+
+pub func fill_screen(r: Refresh*, color: u8):
+    var i: usize = 0
+    while i < 64000:
+        r.vbuf[i] = color
+        i += 1
+
+func ensure_vga_lut(r: Refresh*):
+    if r.vga_ready:
+        return
+    ## gpu.Color is linear-light sRGB. VGA DAC bytes are CRT/sRGB-encoded 0..63.
+    var i: i64 = 0
+    while i < 64:
+        let eight = (i * 4) | (i // 16)
+        let s = (f64)eight / 255.0
+        var lin = 0.0
+        if s <= 0.04045:
+            lin = s / 12.92
+        else:
+            lin = math.pow((s + 0.055) / 1.055, 2.4)
+        r.vga_lin[(usize)i] = lin
+        i += 1
+    r.vga_ready = true
+
+func vga_channel(r: Refresh*, dac: u8, fade: i64) -> f64:
+    var i = (i64)dac
+    if i < 0:
+        i = 0
+    if i > 63:
+        i = 63
+    var lin = r.vga_lin[(usize)i]
+    if fade != 10:
+        lin = lin * (f64)fade / 10.0
+    if lin < 0.0:
+        lin = 0.0
+    if lin > 1.0:
+        lin = 1.0
+    return lin
+
+pub func present(r: Refresh*, raster: ui.Raster*, fade: i64) -> !:
+    ensure_vga_lut(r)
+    var f = fade
+    if f < 0:
+        f = 0
+    if f > 10:
+        f = 10
+    for y in 0..<wl_def.screen_height:
+        for x in 0..<wl_def.view_width:
+            let i = (usize)r.vbuf[(usize)(y * wl_def.view_width + x)] * 3
+            let red = vga_channel(r, pal.pal[i], f)
+            let green = vga_channel(r, pal.pal[i + 1], f)
+            let blue = vga_channel(r, pal.pal[i + 2], f)
+            try raster.put((usize)(y * wl_def.view_width + x), gpu.Color(red, green, blue))
+
+func blit(r: Refresh*, raster: ui.Raster*) -> !:
+    try present(r, raster, 10)

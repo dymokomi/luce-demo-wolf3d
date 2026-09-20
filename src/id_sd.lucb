@@ -1,0 +1,204 @@
+## ID_SD.C digitized sounds from VSWAP. Wolf4SDL SD_PrepareSound:
+## unsigned 8-bit 7042 Hz with 128 bias, resampled to signed 16-bit 22050 Hz.
+import memory
+import wl_def
+import id_pm
+import id_audio
+from audio import Player, render_imf
+
+pub let orig_rate: i64 = 7042
+pub let play_rate: i64 = 22050
+
+pub struct Mixer:
+    var blob: u8[]
+    var start: i64[40]
+    var length: i64[40]
+    var map: i64[80]
+    var player: Player
+    pub var ready: bool
+    pub var sfx_on: bool
+    pub var music_on: bool
+    var song: i64
+    var song_pcm: u8[]
+
+    pub mutating func close():
+        self.player.close()
+        if self.blob.length > 0:
+            free(self.blob) in memory.heap
+        if self.song_pcm.length > 0:
+            free(self.song_pcm) in memory.heap
+        var empty: u8[]
+        self.blob = empty
+        self.song_pcm = empty
+        self.ready = false
+
+pub func load_mixer(pages: id_pm.Pages*) -> Mixer:
+    var mix = Mixer(ready = false, sfx_on = true, music_on = true, song = -1)
+    var m: i64 = 0
+    while m < 80:
+        mix.map[(usize)m] = -1
+        m += 1
+    map_upload(&mix)
+    return finish_mixer(pages, mix) catch failure:
+        discard(failure)
+        recover mix
+
+func finish_mixer(pages: id_pm.Pages*, mix: Mixer) -> Mixer!:
+    let info = try pages.last_page()
+    var out = mix
+    let num = (i64)info.length // 4
+    var page_start: i64[40]
+    var src_len: i64[40]
+    var total: i64 = 0
+    var i: i64 = 0
+    while i < 40 and i < num:
+        let page = (i64)wl_def.u16le(info, (usize)(i * 4))
+        let size = (i64)wl_def.u16le(info, (usize)(i * 4 + 2))
+        page_start[(usize)i] = 0
+        src_len[(usize)i] = 0
+        out.length[(usize)i] = 0
+        if page < 0 or (i64)pages.sound_start + page >= (i64)pages.chunks - 1:
+            break
+        if size > 0 and size < 200000:
+            page_start[(usize)i] = page
+            src_len[(usize)i] = size
+            let dest = dest_samples(size)
+            total += dest * 2
+        i += 1
+    if total <= 0:
+        return mix
+    var blob = try alloc u8[(usize)total] in memory.heap
+    errdefer free(blob) in memory.heap
+    var cursor: i64 = 0
+    i = 0
+    while i < 40:
+        let size = src_len[(usize)i]
+        out.start[(usize)i] = cursor
+        if size > 0:
+            let dest = dest_samples(size)
+            var raw = try alloc u8[(usize)size] in memory.heap
+            copy_digi(raw, 0, pages, page_start[(usize)i], size)
+            resample16(blob, cursor, raw, size, dest)
+            free(raw) in memory.heap
+            out.length[(usize)i] = dest * 2
+            cursor += dest * 2
+        i += 1
+    out.blob = blob
+    out.ready = true
+    return out
+
+pub func play(mix: Mixer*, sound: i64):
+    if not mix.sfx_on or not mix.ready or sound < 0 or sound >= 80:
+        return
+    let digi = mix.map[(usize)sound]
+    if digi < 0 or digi >= 40:
+        return
+    let off = mix.start[(usize)digi]
+    let pcm = mix.length[(usize)digi]
+    if pcm <= 0 or off < 0 or off + pcm > (i64)mix.blob.length:
+        return
+    mix.player.play_pcm16(mix.blob[(usize)off..<(usize)(off + pcm)], play_rate) catch failure:
+        discard(failure)
+
+pub func start_music(mix: Mixer*, audio: id_audio.Audio*, song: i64):
+    if not mix.music_on or song < 0:
+        stop_music(mix)
+        return
+    if mix.song == song and mix.song_pcm.length > 0:
+        mix.player.play_pcm16_loop(mix.song_pcm, play_rate) catch failure:
+            discard(failure)
+        return
+    let imf = audio.chunk(audio.music_start + song)
+    if imf.length < 200:
+        return
+    let pcm = render_imf(imf, play_rate) catch failure:
+        discard(failure)
+        return
+    if mix.song_pcm.length > 0:
+        free(mix.song_pcm) in memory.heap
+    mix.song_pcm = pcm
+    mix.song = song
+    mix.player.play_pcm16_loop(pcm, play_rate) catch failure:
+        discard(failure)
+
+pub func stop_music(mix: Mixer*):
+    mix.player.stop_loop()
+
+func dest_samples(src: i64) -> i64:
+    var n = src * play_rate // orig_rate
+    if n < 1:
+        n = 1
+    return n
+
+## Wolf4SDL GetSample, linear 8-bit unsigned (bias 128) -> 16-bit signed.
+func resample16(blob: u8[], off: i64, src: u8[], src_len: i64, dest: i64):
+    var i: i64 = 0
+    while i < dest:
+        let num = i * src_len
+        let idx = num // dest
+        let frac = num % dest
+        let s0 = sample8(src, src_len, idx)
+        let s1 = sample8(src, src_len, idx + 1)
+        var pcm = (s0 * dest + (s1 - s0) * frac) * 256 // dest
+        if pcm < -32768:
+            pcm = -32768
+        if pcm > 32767:
+            pcm = 32767
+        var bits = pcm
+        if bits < 0:
+            bits += 65536
+        let at = off + i * 2
+        if at + 1 < (i64)blob.length:
+            blob[(usize)at] = (u8)(bits % 256)
+            blob[(usize)(at + 1)] = (u8)(bits // 256)
+        i += 1
+
+func sample8(src: u8[], src_len: i64, i: i64) -> i64:
+    if i < 0 or i >= src_len or i >= (i64)src.length:
+        return 0
+    return (i64)src[(usize)i] - 128
+
+func map_upload(mix: Mixer*):
+    ## wl_main.c wolfdigimap[] upload (shareware) set
+    mix.map[(usize)wl_def.snd_halt] = 0
+    mix.map[(usize)wl_def.snd_dog_bark] = 1
+    mix.map[(usize)wl_def.snd_door_close] = 2
+    mix.map[(usize)wl_def.snd_door_open] = 3
+    mix.map[(usize)wl_def.snd_machine] = 4
+    mix.map[(usize)wl_def.snd_pistol] = 5
+    mix.map[(usize)wl_def.snd_gatling] = 6
+    mix.map[(usize)wl_def.snd_ss] = 7
+    mix.map[(usize)wl_def.snd_gutentag] = 8
+    mix.map[(usize)wl_def.snd_mutti] = 9
+    mix.map[(usize)wl_def.snd_boss_fire] = 10
+    mix.map[(usize)wl_def.snd_ss_fire] = 11
+    mix.map[(usize)wl_def.snd_death1] = 12
+    mix.map[(usize)wl_def.snd_death2] = 13
+    mix.map[(usize)wl_def.snd_death3] = 13
+    mix.map[(usize)wl_def.snd_damage] = 14
+    mix.map[(usize)wl_def.snd_pushwall] = 15
+    mix.map[(usize)wl_def.snd_lebens] = 20
+    mix.map[(usize)wl_def.snd_nazi_fire] = 21
+    mix.map[(usize)wl_def.snd_slurpie] = 22
+
+func copy_digi(blob: u8[], off: i64, pages: id_pm.Pages*, page: i64, size: i64):
+    var dest = off
+    var left = size
+    var p = page
+    while left > 0:
+        let raw = pages.sound_page(p) catch failure:
+            discard(failure)
+            var empty: u8[]
+            recover empty
+        var n = (i64)raw.length
+        if n <= 0:
+            break
+        if n > left:
+            n = left
+        var i: i64 = 0
+        while i < n and dest + i < (i64)blob.length:
+            blob[(usize)(dest + i)] = raw[(usize)i]
+            i += 1
+        dest += n
+        left -= n
+        p += 1

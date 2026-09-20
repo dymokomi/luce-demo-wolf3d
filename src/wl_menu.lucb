@@ -1,0 +1,677 @@
+## WL_MENU.C / WL_MAIN.C DemoLoop + Control Panel, original shareware layout.
+import wl_def
+import wl_draw
+import wl_game
+import wl_types
+import id_sd
+import id_graph
+from wl_types import Game, Buttons
+
+pub func tick(game: Game*, r: wl_draw.Refresh*, buttons: Buttons, elapsed: f64):
+    var tics = (i64)(elapsed * 70.0 + 0.5)
+    if tics < 1:
+        tics = 1
+    if tics > wl_def.max_tics:
+        tics = tics if tics < 20 else 20
+    game.tics = tics
+    game.mode_tics += tics
+    if game.fade < 10:
+        game.fade += 1
+        if game.fade > 10:
+            game.fade = 10
+    game.menu_gun_tics += tics
+    if game.menu_gun == 0:
+        if game.menu_gun_tics > 8:
+            game.menu_gun = 1
+            game.menu_gun_tics = 0
+    else:
+        if game.menu_gun_tics > 70:
+            game.menu_gun = 0
+            game.menu_gun_tics = 0
+    let mode = game.mode
+    if mode == wl_def.mode_pg13:
+        tick_pg13(game, buttons)
+    elif mode == wl_def.mode_title:
+        tick_attract(game, buttons, wl_def.mode_credits, 70 * 15)
+    elif mode == wl_def.mode_credits:
+        tick_attract(game, buttons, wl_def.mode_scores, 70 * 10)
+    elif mode == wl_def.mode_scores:
+        tick_attract(game, buttons, wl_def.mode_menu, 70 * 10)
+    elif mode == wl_def.mode_menu:
+        tick_main(game, buttons)
+    elif mode == wl_def.mode_episode:
+        tick_episode(game, buttons)
+    elif mode == wl_def.mode_skill:
+        tick_skill(game, buttons)
+    elif mode == wl_def.mode_sound:
+        tick_sound(game, buttons)
+    elif mode == wl_def.mode_control:
+        tick_control(game, buttons)
+    elif mode == wl_def.mode_confirm:
+        tick_confirm(game, buttons)
+    elif mode == wl_def.mode_help:
+        tick_help(game, buttons)
+    elif mode == wl_def.mode_psyched:
+        tick_psyched(game)
+    elif mode == wl_def.mode_inter:
+        tick_inter(game, buttons)
+    elif mode == wl_def.mode_victory:
+        tick_victory(game, buttons)
+    elif mode == wl_def.mode_pause:
+        if buttons.escape_edge or buttons.enter_edge or buttons.pause:
+            game.mode = wl_def.mode_game
+    elif mode == wl_def.mode_high:
+        if buttons.any_key or buttons.enter_edge or buttons.escape_edge:
+            go_menu(game)
+    draw(game, r)
+
+pub func draw(game: Game*, r: wl_draw.Refresh*):
+    let mode = game.mode
+    if mode == wl_def.mode_pg13:
+        draw_pic_screen(game, r, wl_def.pg13_pic)
+    elif mode == wl_def.mode_title:
+        draw_pic_screen(game, r, wl_def.title_pic)
+    elif mode == wl_def.mode_credits:
+        draw_pic_screen(game, r, wl_def.credits_pic)
+    elif mode == wl_def.mode_scores or mode == wl_def.mode_high:
+        draw_high_scores(game, r)
+    elif mode == wl_def.mode_menu:
+        draw_main_menu(game, r)
+    elif mode == wl_def.mode_episode:
+        draw_episode(game, r)
+    elif mode == wl_def.mode_skill:
+        draw_skill(game, r)
+    elif mode == wl_def.mode_sound:
+        draw_sound(game, r)
+    elif mode == wl_def.mode_control:
+        draw_control(game, r)
+    elif mode == wl_def.mode_confirm:
+        draw_main_menu(game, r)
+        draw_confirm(game, r)
+    elif mode == wl_def.mode_help:
+        draw_help(game, r)
+    elif mode == wl_def.mode_psyched:
+        draw_psyched(game, r)
+    elif mode == wl_def.mode_inter:
+        draw_inter(game, r)
+    elif mode == wl_def.mode_victory:
+        draw_victory(game, r)
+    elif mode == wl_def.mode_pause:
+        draw_pic_screen(game, r, wl_def.paused_pic)
+
+func go_menu(game: Game*):
+    game.mode = wl_def.mode_menu
+    game.mode_tics = 0
+    game.fade = 0
+    game.menu_cur = 6 if not game.ingame else 0
+    id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_wonderin)
+
+func go_attract(game: Game*, mode: i64):
+    game.mode = mode
+    game.mode_tics = 0
+    game.fade = 0
+
+func tick_pg13(game: Game*, buttons: Buttons):
+    if game.mode_tics == game.tics:
+        id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_nazi_nor)
+    if buttons.any_key or buttons.enter_edge or game.mode_tics > 70 * 7:
+        go_attract(game, wl_def.mode_title)
+
+func tick_attract(game: Game*, buttons: Buttons, next: i64, wait: i64):
+    if buttons.any_key or buttons.enter_edge or buttons.escape_edge:
+        go_menu(game)
+        return
+    if game.mode_tics > wait:
+        if next == wl_def.mode_menu:
+            go_menu(game)
+        else:
+            go_attract(game, next)
+
+func main_count(game: Game*) -> i64:
+    discard(game)
+    return 10
+
+func main_active(game: Game*, i: i64) -> bool:
+    if i == 4:
+        return game.ingame
+    return true
+
+func tick_main(game: Game*, buttons: Buttons):
+    let n = main_count(game)
+    if buttons.forward and not buttons.back:
+        if game.mode_tics > 8:
+            move_cur(game, n, -1)
+            game.mode_tics = 0
+    elif buttons.back and not buttons.forward:
+        if game.mode_tics > 8:
+            move_cur(game, n, 1)
+            game.mode_tics = 0
+    if buttons.enter_edge or buttons.use_edge:
+        id_sd.play(&game.mixer, wl_def.snd_pistol)
+        pick_main(game)
+    elif buttons.escape_edge:
+        if game.ingame:
+            game.mode = wl_def.mode_game
+            id_sd.start_music(&game.mixer, &game.audio, wl_game.floor_song(game.mapon))
+        else:
+            go_attract(game, wl_def.mode_title)
+
+func move_cur(game: Game*, n: i64, dir: i64):
+    var i = game.menu_cur
+    var steps: i64 = 0
+    while steps < n:
+        i += dir
+        if i < 0:
+            i = n - 1
+        if i >= n:
+            i = 0
+        if main_active(game, i) or n != 10:
+            game.menu_cur = i
+            id_sd.play(&game.mixer, wl_def.snd_machine)
+            return
+        steps += 1
+    discard(dir)
+
+func pick_main(game: Game*):
+    let which = game.menu_cur
+    if which == 0:
+        game.mode = wl_def.mode_episode
+        game.menu_cur = 0
+        game.fade = 0
+    elif which == 1:
+        game.mode = wl_def.mode_sound
+        game.menu_cur = 0
+        game.fade = 0
+    elif which == 2:
+        game.mode = wl_def.mode_control
+        game.fade = 0
+    elif which == 3 or which == 4:
+        game.confirm_kind = 3
+        game.mode = wl_def.mode_confirm
+    elif which == 5:
+        game.confirm_kind = 4
+        game.mode = wl_def.mode_confirm
+    elif which == 6:
+        game.mode = wl_def.mode_help
+        game.help_page = 0
+        game.fade = 0
+        id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_corner)
+    elif which == 7:
+        if game.ingame:
+            game.confirm_kind = 2
+            game.confirm_yes = false
+            game.mode = wl_def.mode_confirm
+        else:
+            game.mode = wl_def.mode_high
+            game.fade = 0
+            id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_roster)
+    elif which == 8:
+        if game.ingame:
+            game.mode = wl_def.mode_game
+            id_sd.start_music(&game.mixer, &game.audio, wl_game.floor_song(game.mapon))
+        else:
+            go_attract(game, wl_def.mode_title)
+    elif which == 9:
+        game.confirm_kind = 1
+        game.confirm_yes = false
+        game.mode = wl_def.mode_confirm
+
+func tick_episode(game: Game*, buttons: Buttons):
+    if buttons.escape_edge:
+        go_menu(game)
+        return
+    if buttons.enter_edge:
+        if game.menu_cur == 0:
+            id_sd.play(&game.mixer, wl_def.snd_pistol)
+            game.mode = wl_def.mode_skill
+            game.menu_cur = 1
+            game.fade = 0
+        else:
+            id_sd.play(&game.mixer, wl_def.snd_no_way)
+            game.confirm_kind = 5
+            game.mode = wl_def.mode_confirm
+    if buttons.forward and game.mode_tics > 8:
+        game.menu_cur = (game.menu_cur + 5) % 6
+        game.mode_tics = 0
+    elif buttons.back and game.mode_tics > 8:
+        game.menu_cur = (game.menu_cur + 1) % 6
+        game.mode_tics = 0
+
+func tick_skill(game: Game*, buttons: Buttons):
+    if buttons.escape_edge:
+        game.mode = wl_def.mode_episode
+        game.menu_cur = 0
+        game.fade = 0
+        return
+    if buttons.forward and game.mode_tics > 8:
+        game.menu_cur = (game.menu_cur + 3) % 4
+        game.mode_tics = 0
+        id_sd.play(&game.mixer, wl_def.snd_machine)
+    elif buttons.back and game.mode_tics > 8:
+        game.menu_cur = (game.menu_cur + 1) % 4
+        game.mode_tics = 0
+        id_sd.play(&game.mixer, wl_def.snd_machine)
+    if buttons.enter_edge:
+        id_sd.play(&game.mixer, wl_def.snd_pistol)
+        wl_game.new_game(game, game.menu_cur)
+
+func tick_sound(game: Game*, buttons: Buttons):
+    if buttons.escape_edge:
+        go_menu(game)
+        return
+    if buttons.forward and game.mode_tics > 8:
+        game.menu_cur = (game.menu_cur + 2) % 3
+        game.mode_tics = 0
+    elif buttons.back and game.mode_tics > 8:
+        game.menu_cur = (game.menu_cur + 1) % 3
+        game.mode_tics = 0
+    if buttons.enter_edge:
+        if game.menu_cur == 0:
+            game.mixer.sfx_on = not game.mixer.sfx_on
+        elif game.menu_cur == 1:
+            game.mixer.music_on = not game.mixer.music_on
+            if game.mixer.music_on:
+                id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_wonderin)
+            else:
+                id_sd.stop_music(&game.mixer)
+        else:
+            go_menu(game)
+
+func tick_control(game: Game*, buttons: Buttons):
+    if buttons.escape_edge or buttons.enter_edge:
+        go_menu(game)
+
+func tick_confirm(game: Game*, buttons: Buttons):
+    if buttons.yes or (buttons.enter_edge and game.confirm_yes):
+        if game.confirm_kind == 1:
+            game.want_quit = true
+            game.ingame = false
+        elif game.confirm_kind == 2:
+            game.ingame = false
+            go_menu(game)
+        elif game.confirm_kind == 5:
+            game.mode = wl_def.mode_episode
+        else:
+            go_menu(game)
+        return
+    if buttons.no or buttons.escape_edge:
+        if game.confirm_kind == 5:
+            game.mode = wl_def.mode_episode
+        else:
+            go_menu(game)
+        return
+    if buttons.turn_left or buttons.turn_right or buttons.forward or buttons.back:
+        game.confirm_yes = not game.confirm_yes
+
+func tick_help(game: Game*, buttons: Buttons):
+    if buttons.escape_edge:
+        go_menu(game)
+        id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_wonderin)
+        return
+    if buttons.enter_edge or buttons.use_edge:
+        game.help_page += 1
+        if game.help_page > 1:
+            go_menu(game)
+            id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_wonderin)
+
+func tick_psyched(game: Game*):
+    if game.mode_tics > 40:
+        game.mode = wl_def.mode_game
+        game.fade = 10
+
+func tick_inter(game: Game*, buttons: Buttons):
+    if game.mode_tics == game.tics:
+        id_sd.start_music(&game.mixer, &game.audio, wl_def.mus_endlevel)
+    if buttons.enter_edge or buttons.any_key or game.mode_tics > 70 * 8:
+        wl_game.finish_level(game)
+
+func tick_victory(game: Game*, buttons: Buttons):
+    if buttons.enter_edge or buttons.any_key or game.mode_tics > 70 * 12:
+        check_high(game)
+        game.ingame = false
+        game.mode = wl_def.mode_high
+        game.fade = 0
+
+func check_high(game: Game*):
+    var i: i64 = 0
+    while i < wl_def.max_scores:
+        if game.score > game.hs_score[(usize)i]:
+            var j = wl_def.max_scores - 1
+            while j > i:
+                game.hs_score[(usize)j] = game.hs_score[(usize)(j - 1)]
+                game.hs_completed[(usize)j] = game.hs_completed[(usize)(j - 1)]
+                j -= 1
+            game.hs_score[(usize)i] = game.score
+            game.hs_completed[(usize)i] = game.mapon + 1
+            return
+        i += 1
+
+func font0(game: Game*) -> id_graph.Pic*:
+    return wl_types.cached_pic(game, wl_def.start_font)
+
+func font1(game: Game*) -> id_graph.Pic*:
+    return wl_types.cached_pic(game, wl_def.start_font + 1)
+
+func us_print(game: Game*, r: wl_draw.Refresh*, text: const u8[]):
+    game.print_x = wl_draw.draw_text(r, font0(game), game.print_x, game.print_y, text, game.fontcolor)
+
+func us_print1(game: Game*, r: wl_draw.Refresh*, text: const u8[]):
+    game.print_x = wl_draw.draw_text(r, font1(game), game.print_x, game.print_y, text, game.fontcolor)
+
+func draw_pic_screen(game: Game*, r: wl_draw.Refresh*, chunk: i64):
+    wl_draw.fill_screen(r, 0)
+    wl_draw.vwb_pic(r, 0, 0, wl_types.cached_pic(game, chunk))
+
+func draw_stripes(r: wl_draw.Refresh*, y: i64):
+    wl_draw.vwb_bar(r, 0, y, 320, 24, 0)
+    wl_draw.vwb_hlin(r, 0, 319, y + 22, wl_def.stripe_color)
+
+func draw_main_menu(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, wl_def.bord_color)
+    draw_stripes(r, 10)
+    wl_draw.vwb_pic(r, 84, 0, wl_types.cached_pic(game, wl_def.c_options_pic))
+    wl_draw.vwb_pic(r, 112, 184, wl_types.cached_pic(game, wl_def.c_mouse_lback_pic))
+    wl_draw.draw_window(r, 68, 52, 178, 136, wl_def.bkgd_color)
+    var i: i64 = 0
+    while i < 10:
+        draw_item(game, r, 76, 55, i, main_label(game, i), main_active(game, i))
+        i += 1
+    draw_gun(game, r, 76, 55)
+
+func main_label(game: Game*, i: i64) -> const u8[]:
+    if i == 0:
+        return b"New Game"
+    if i == 1:
+        return b"Sound"
+    if i == 2:
+        return b"Control"
+    if i == 3:
+        return b"Load Game"
+    if i == 4:
+        return b"Save Game"
+    if i == 5:
+        return b"Change View"
+    if i == 6:
+        return b"Read This!"
+    if i == 7:
+        return b"End Game" if game.ingame else b"View Scores"
+    if i == 8:
+        return b"Back to Game" if game.ingame else b"Back to Demo"
+    return b"Quit"
+
+func draw_item(game: Game*, r: wl_draw.Refresh*, x: i64, y: i64, i: i64, label: const u8[], active: bool):
+    var color = wl_def.text_color
+    if not active:
+        color = wl_def.deactive_color
+    elif i == game.menu_cur:
+        color = wl_def.highlight_color
+    game.fontcolor = color
+    game.print_x = x + 24
+    game.print_y = y + i * 13
+    us_print(game, r, label)
+
+func draw_gun(game: Game*, r: wl_draw.Refresh*, x: i64, y: i64):
+    let gx = x & ~7
+    let gy = y + game.menu_cur * 13 - 2
+    let pic = wl_def.c_cursor1_pic if game.menu_gun == 0 else wl_def.c_cursor2_pic
+    wl_draw.vwb_pic(r, gx, gy, wl_types.cached_pic(game, pic))
+
+func draw_episode(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, wl_def.bord_color)
+    wl_draw.vwb_pic(r, 112, 184, wl_types.cached_pic(game, wl_def.c_mouse_lback_pic))
+    wl_draw.draw_window(r, 6, 19, 308, 162, wl_def.bkgd_color)
+    game.fontcolor = wl_def.readh_color
+    game.print_x = 80
+    game.print_y = 2
+    us_print(game, r, b"Which episode to play?")
+    var i: i64 = 0
+    while i < 6:
+        wl_draw.vwb_pic(r, 42, 23 + i * 26, wl_types.cached_pic(game, wl_def.c_episode1_pic + i))
+        i += 1
+    let gun_y = 23 + game.menu_cur * 26
+    let pic = wl_def.c_cursor1_pic if game.menu_gun == 0 else wl_def.c_cursor2_pic
+    wl_draw.vwb_pic(r, 10, gun_y, wl_types.cached_pic(game, pic))
+
+func draw_skill(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, wl_def.bord_color)
+    wl_draw.vwb_pic(r, 112, 184, wl_types.cached_pic(game, wl_def.c_mouse_lback_pic))
+    wl_draw.draw_window(r, 45, 90, 225, 67, wl_def.bkgd_color)
+    game.fontcolor = wl_def.readh_color
+    game.print_x = 70
+    game.print_y = 68
+    us_print(game, r, b"How tough are you?")
+    draw_item(game, r, 50, 100, 0, b"Can I play, Daddy?", true)
+    draw_item(game, r, 50, 100, 1, b"Don't hurt me.", true)
+    draw_item(game, r, 50, 100, 2, b"Bring 'em on!", true)
+    draw_item(game, r, 50, 100, 3, b"I am Death incarnate!", true)
+    draw_gun(game, r, 50, 100)
+    let face = wl_def.c_baby_pic + game.menu_cur
+    wl_draw.vwb_pic(r, 248, 92, wl_types.cached_pic(game, face))
+
+func draw_sound(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, wl_def.bord_color)
+    draw_stripes(r, 10)
+    wl_draw.vwb_pic(r, 84, 0, wl_types.cached_pic(game, wl_def.c_options_pic))
+    wl_draw.vwb_pic(r, 112, 184, wl_types.cached_pic(game, wl_def.c_mouse_lback_pic))
+    wl_draw.vwb_pic(r, 100, 60, wl_types.cached_pic(game, wl_def.c_fx_title_pic))
+    wl_draw.vwb_pic(r, 100, 110, wl_types.cached_pic(game, wl_def.c_music_title_pic))
+    game.fontcolor = wl_def.highlight_color if game.menu_cur == 0 else wl_def.text_color
+    game.print_x = 100
+    game.print_y = 80
+    us_print(game, r, b"SFX: ON" if game.mixer.sfx_on else b"SFX: OFF")
+    game.fontcolor = wl_def.highlight_color if game.menu_cur == 1 else wl_def.text_color
+    game.print_x = 100
+    game.print_y = 130
+    us_print(game, r, b"Music: ON" if game.mixer.music_on else b"Music: OFF")
+    game.fontcolor = wl_def.highlight_color if game.menu_cur == 2 else wl_def.text_color
+    game.print_x = 100
+    game.print_y = 160
+    us_print(game, r, b"Back")
+
+func draw_control(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, wl_def.bord_color)
+    draw_stripes(r, 10)
+    wl_draw.vwb_pic(r, 84, 0, wl_types.cached_pic(game, wl_def.c_control_pic))
+    wl_draw.draw_window(r, 16, 81, 284, 60, wl_def.bkgd_color)
+    game.fontcolor = wl_def.text_color
+    game.print_x = 40
+    game.print_y = 90
+    us_print(game, r, b"Arrows / WASD  move")
+    game.print_x = 40
+    game.print_y = 104
+    us_print(game, r, b"Ctrl or click  fire")
+    game.print_x = 40
+    game.print_y = 118
+    us_print(game, r, b"Space  open     Alt  strafe")
+    game.print_x = 40
+    game.print_y = 132
+    us_print(game, r, b"1-4 weapon   Esc menu   P pause")
+
+func draw_confirm(game: Game*, r: wl_draw.Refresh*):
+    var msg = b"Are you sure you want\nto quit this great game?"
+    if game.confirm_kind == 2:
+        msg = b"Are you sure you want\nto end the game you\nare playing?"
+    elif game.confirm_kind == 3:
+        msg = b"Save/Load is not in\nthis build yet."
+    elif game.confirm_kind == 4:
+        msg = b"View size is 320x200\n(original DOS)."
+    elif game.confirm_kind == 5:
+        msg = b"Please select \"Read This!\"\nfrom the Options menu to\norder this episode from Apogee."
+    wl_draw.draw_window(r, 50, 70, 220, 50, wl_def.text_color)
+    game.fontcolor = 0
+    game.print_x = 60
+    game.print_y = 78
+    us_print1(game, r, msg)
+
+func draw_help(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, 0x11)
+    if game.help_page == 0:
+        wl_draw.vwb_pic(r, 0, 0, wl_types.cached_pic(game, 3))
+        game.fontcolor = 0x4a
+        game.print_x = 16
+        game.print_y = 160
+        us_print(game, r, b"Get psyched!  Collect keys,")
+        game.print_x = 16
+        game.print_y = 172
+        us_print(game, r, b"open doors, and kill Nazis.")
+    else:
+        wl_draw.vwb_pic(r, 0, 0, wl_types.cached_pic(game, 12))
+        game.fontcolor = 0x4a
+        game.print_x = 16
+        game.print_y = 160
+        us_print(game, r, b"Order the full game from Apogee")
+        game.print_x = 16
+        game.print_y = 172
+        us_print(game, r, b"for episodes 2-6 and more maps!")
+
+func draw_psyched(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.fill_screen(r, 0x7f)
+    wl_draw.vwb_pic(r, 48, 80, wl_types.cached_pic(game, wl_def.get_psyched_pic))
+    let w = game.mode_tics * 4
+    var bar = w
+    if bar > 224:
+        bar = 224
+    wl_draw.vwb_bar(r, 48, 112, bar, 8, 0x4a)
+
+func draw_high_scores(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 200, wl_def.bord_color)
+    draw_stripes(r, 10)
+    wl_draw.vwb_pic(r, 48, 0, wl_types.cached_pic(game, wl_def.high_scores_pic))
+    wl_draw.vwb_pic(r, 32, 68, wl_types.cached_pic(game, wl_def.c_name_pic))
+    wl_draw.vwb_pic(r, 160, 68, wl_types.cached_pic(game, wl_def.c_level_pic))
+    wl_draw.vwb_pic(r, 224, 68, wl_types.cached_pic(game, wl_def.c_score_pic))
+    game.fontcolor = 15
+    var i: i64 = 0
+    while i < wl_def.max_scores:
+        game.print_y = 76 + 16 * i
+        game.print_x = 32
+        us_print(game, r, hs_name(i))
+        game.print_x = 176
+        print_number(game, r, game.hs_completed[(usize)i])
+        game.print_x = 232
+        print_number(game, r, game.hs_score[(usize)i])
+        i += 1
+
+func hs_name(i: i64) -> const u8[]:
+    if i == 0:
+        return b"id software-'92"
+    if i == 1:
+        return b"Adrian Carmack"
+    if i == 2:
+        return b"John Carmack"
+    if i == 3:
+        return b"Kevin Cloud"
+    if i == 4:
+        return b"Tom Hall"
+    if i == 5:
+        return b"John Romero"
+    return b"Jay Wilbur"
+
+func print_number(game: Game*, r: wl_draw.Refresh*, n: i64):
+    var buf: u8[12]
+    var v = n
+    if v < 0:
+        v = 0
+    var len: i64 = 0
+    if v == 0:
+        buf[0] = 48
+        len = 1
+    else:
+        var tmp: u8[12]
+        var t: i64 = 0
+        var x = v
+        while x > 0:
+            tmp[(usize)t] = (u8)(48 + x % 10)
+            t += 1
+            x = x // 10
+        var i: i64 = 0
+        while i < t:
+            buf[(usize)i] = tmp[(usize)(t - 1 - i)]
+            i += 1
+        len = t
+    us_print(game, r, buf[0..<(usize)len])
+
+func draw_inter(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 160, wl_def.view_color)
+    wl_draw.vwb_pic(r, 0, 16, wl_types.cached_pic(game, wl_def.l_guy_pic))
+    write_letters(game, r, 14, 2, b"floor\ncompleted")
+    write_letters(game, r, 14, 7, b"bonus     0")
+    write_letters(game, r, 16, 10, b"time")
+    write_letters(game, r, 16, 12, b" par")
+    write_letters(game, r, 9, 14, b"kill ratio    %")
+    write_letters(game, r, 5, 16, b"secret ratio    %")
+    write_letters(game, r, 1, 18, b"treasure ratio    %")
+    let floor = game.mapon + 1
+    draw_lnum(game, r, 26 * 8, 16, floor)
+    let sec = game.time_tics // 70
+    let mins = sec // 60
+    let secs = sec % 60
+    draw_lnum(game, r, 26 * 8, 80, mins)
+    wl_draw.vwb_pic(r, 26 * 8 + 16, 80, wl_types.cached_pic(game, wl_def.l_colon_pic))
+    draw_lnum(game, r, 26 * 8 + 24, 80, secs)
+    let kr = ratio(game.killcount, game.killtotal)
+    let sr = ratio(game.secretcount, game.secrettotal)
+    let tr = ratio(game.treasurecount, game.treasuretotal)
+    draw_lnum(game, r, 26 * 8, 14 * 8, kr)
+    draw_lnum(game, r, 26 * 8, 16 * 8, sr)
+    draw_lnum(game, r, 26 * 8, 18 * 8, tr)
+
+func draw_victory(game: Game*, r: wl_draw.Refresh*):
+    wl_draw.vwb_bar(r, 0, 0, 320, 160, wl_def.view_color)
+    wl_draw.vwb_pic(r, 8, 32, wl_types.cached_pic(game, wl_def.l_bj_wins_pic))
+    write_letters(game, r, 18, 2, b"you win!")
+    write_letters(game, r, 14, 8, b"total time")
+    write_letters(game, r, 12, 12, b"averages")
+    let sec = game.time_tics // 70
+    let mins = sec // 60
+    let secs = sec % 60
+    draw_lnum(game, r, 14 * 8, 8 * 8, mins)
+    wl_draw.vwb_pic(r, 14 * 8 + 16, 8 * 8, wl_types.cached_pic(game, wl_def.l_colon_pic))
+    draw_lnum(game, r, 14 * 8 + 24, 8 * 8, secs)
+
+func ratio(num: i64, den: i64) -> i64:
+    if den <= 0:
+        return 0
+    return num * 100 // den
+
+func draw_lnum(game: Game*, r: wl_draw.Refresh*, x: i64, y: i64, n: i64):
+    var v = n
+    if v < 0:
+        v = 0
+    if v > 99:
+        v = 99
+    let tens = v // 10
+    let ones = v % 10
+    wl_draw.vwb_pic(r, x, y, wl_types.cached_pic(game, wl_def.l_num0_pic + tens))
+    wl_draw.vwb_pic(r, x + 16, y, wl_types.cached_pic(game, wl_def.l_num0_pic + ones))
+
+func write_letters(game: Game*, r: wl_draw.Refresh*, x: i64, y: i64, text: const u8[]):
+    var nx = x * 8
+    var ny = y * 8
+    var i: usize = 0
+    while i < text.length:
+        let ch = text[i]
+        if ch == 10:
+            nx = x * 8
+            ny += 16
+        elif ch == 32:
+            nx += 8
+        elif ch >= 48 and ch <= 57:
+            wl_draw.vwb_pic(r, nx, ny, wl_types.cached_pic(game, wl_def.l_num0_pic + (i64)ch - 48))
+            nx += 16
+        elif ch == 58:
+            wl_draw.vwb_pic(r, nx, ny, wl_types.cached_pic(game, wl_def.l_colon_pic))
+            nx += 8
+        elif ch == 37:
+            wl_draw.vwb_pic(r, nx, ny, wl_types.cached_pic(game, wl_def.l_percent_pic))
+            nx += 16
+        else:
+            var c = (i64)ch
+            if c >= 97:
+                c -= 32
+            if c >= 65 and c <= 90:
+                wl_draw.vwb_pic(r, nx, ny, wl_types.cached_pic(game, wl_def.l_a_pic + c - 65))
+                nx += 16
+            else:
+                nx += 8
+        i += 1
