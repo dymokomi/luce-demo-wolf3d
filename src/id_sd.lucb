@@ -39,9 +39,7 @@ pub func load_mixer(pages: id_pm.Pages*) -> Mixer:
         mix.map[(usize)m] = -1
         m += 1
     map_upload(&mix)
-    return finish_mixer(pages, mix) catch failure:
-        discard(failure)
-        recover mix
+    return finish_mixer(pages, mix) else mix
 
 func finish_mixer(pages: id_pm.Pages*, mix: Mixer) -> Mixer!:
     let info = try pages.last_page()
@@ -97,29 +95,24 @@ pub func play(mix: Mixer*, sound: i64):
     let pcm = mix.length[(usize)digi]
     if pcm <= 0 or off < 0 or off + pcm > (i64)mix.blob.length:
         return
-    mix.player.play_pcm16(mix.blob[(usize)off..<(usize)(off + pcm)], play_rate) catch failure:
-        discard(failure)
+    mix.player.play_pcm16(mix.blob[(usize)off..<(usize)(off + pcm)], play_rate) else ()
 
 pub func start_music(mix: Mixer*, audio: id_audio.Audio*, song: i64):
     if not mix.music_on or song < 0:
         stop_music(mix)
         return
     if mix.song == song and mix.song_pcm.length > 0:
-        mix.player.play_pcm16_loop(mix.song_pcm, play_rate) catch failure:
-            discard(failure)
+        mix.player.play_pcm16_loop(mix.song_pcm, play_rate) else ()
         return
     let imf = audio.chunk(audio.music_start + song)
     if imf.length < 200:
         return
-    let pcm = render_imf(imf, play_rate) catch failure:
-        discard(failure)
-        return
+    let pcm = render_imf(imf, play_rate) else return
     if mix.song_pcm.length > 0:
         free(mix.song_pcm) in memory.heap
     mix.song_pcm = pcm
     mix.song = song
-    mix.player.play_pcm16_loop(pcm, play_rate) catch failure:
-        discard(failure)
+    mix.player.play_pcm16_loop(pcm, play_rate) else ()
 
 pub func stop_music(mix: Mixer*):
     mix.player.stop_loop()
@@ -186,8 +179,7 @@ func copy_digi(blob: u8[], off: i64, pages: id_pm.Pages*, page: i64, size: i64):
     var left = size
     var p = page
     while left > 0:
-        let raw = pages.sound_page(p) catch failure:
-            discard(failure)
+        let raw = pages.sound_page(p) catch:
             var empty: u8[]
             recover empty
         var n = (i64)raw.length

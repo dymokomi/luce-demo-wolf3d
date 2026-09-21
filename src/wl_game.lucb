@@ -43,16 +43,16 @@ pub func load_game(head_path: str, maps_path: str, vswap_path: str) -> Game!:
 
 func load_audio_near(game: Game*, head_path: str):
     let dir = paths.directory(head_path)
-    if try_audio(game, joined(dir, "AUDIOHED.WL1"), joined(dir, "AUDIOT.WL1")):
+    var head_buf: u8[512] = ---
+    var data_buf: u8[512] = ---
+    if try_audio(game, paths.join_into(head_buf[0..], dir, "AUDIOHED.WL1"), paths.join_into(data_buf[0..], dir, "AUDIOT.WL1")):
         return
     if try_audio(game, "AUDIOHED.WL1", "AUDIOT.WL1"):
         return
     discard(try_audio(game, "data/AUDIOHED.WL1", "data/AUDIOT.WL1"))
 
 func try_audio(game: Game*, head: str, data: str) -> bool:
-    return load_audio_files(game, head, data) catch failure:
-        discard(failure)
-        recover false
+    return load_audio_files(game, head, data) else false
 
 func load_audio_files(game: Game*, head: str, data: str) -> bool!:
     game.audio = try id_audio.load_audio(head, data)
@@ -60,22 +60,17 @@ func load_audio_files(game: Game*, head: str, data: str) -> bool!:
 
 func load_graph_near(game: Game*, head_path: str):
     let dir = paths.directory(head_path)
-    if try_graph(game, joined(dir, "VGAHEAD.WL1"), joined(dir, "VGAGRAPH.WL1"), joined(dir, "VGADICT.WL1")):
+    var head_buf: u8[512] = ---
+    var graph_buf: u8[512] = ---
+    var dict_buf: u8[512] = ---
+    if try_graph(game, paths.join_into(head_buf[0..], dir, "VGAHEAD.WL1"), paths.join_into(graph_buf[0..], dir, "VGAGRAPH.WL1"), paths.join_into(dict_buf[0..], dir, "VGADICT.WL1")):
         return
     if try_graph(game, "VGAHEAD.WL1", "VGAGRAPH.WL1", "VGADICT.WL1"):
         return
     discard(try_graph(game, "data/VGAHEAD.WL1", "data/VGAGRAPH.WL1", "data/VGADICT.WL1"))
 
-func joined(dir: str, name: str) -> str:
-    let text = paths.join(dir, name) catch failure:
-        discard(failure)
-        recover name
-    return text
-
 func try_graph(game: Game*, head: str, graph_path: str, dict: str) -> bool:
-    return load_latch_pics(game, head, graph_path, dict) catch failure:
-        discard(failure)
-        recover false
+    return load_latch_pics(game, head, graph_path, dict) else false
 
 func load_latch_pics(game: Game*, head: str, graph_path: str, dict: str) -> bool!:
     game.graph = try id_graph.load_graph(head, graph_path, dict)
@@ -83,9 +78,7 @@ func load_latch_pics(game: Game*, head: str, graph_path: str, dict: str) -> bool
     var chunk = wl_def.latch_pics_start
     while chunk <= wl_def.latch_pics_end:
         let index = chunk - wl_def.latch_pics_start
-        game.latch[(usize)index] = game.graph.cache_gr_chunk(chunk) catch failure:
-            discard(failure)
-            recover id_graph.Pic()
+        game.latch[(usize)index] = game.graph.cache_gr_chunk(chunk) else id_graph.Pic()
         chunk += 1
     return true
 
@@ -207,8 +200,7 @@ pub func revive(game: Game*):
     game.attackframe = 0
     game.weaponframe = 0
     game.gatling_face = 0
-    setup_level(game, game.mapon) catch failure:
-        discard(failure)
+    setup_level(game, game.mapon) catch:
         game.dead = true
 
 ## WL_GAME.C songs[] / StartMusic for floor
@@ -240,8 +232,7 @@ pub func finish_level(game: Game*):
     elif game.mapon == 9:
         next = 1
     game.playstate = 0
-    setup_level(game, next) catch failure:
-        discard(failure)
+    setup_level(game, next) catch:
         game.mode = wl_def.mode_victory
         return
     game.mode = wl_def.mode_psyched
@@ -266,8 +257,7 @@ pub func new_game(game: Game*, difficulty: i64):
     game.attackframe = 0
     game.weaponframe = 0
     game.ammo = wl_def.start_ammo
-    setup_level(game, 0) catch failure:
-        discard(failure)
+    setup_level(game, 0) else ()
     game.mode = wl_def.mode_psyched
     game.mode_tics = 0
     id_sd.start_music(&game.mixer, &game.audio, floor_song(0))

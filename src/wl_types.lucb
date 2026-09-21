@@ -182,9 +182,7 @@ pub func cached_pic(game: Game*, chunk: i64) -> id_graph.Pic*:
     if chunk < 0 or chunk >= wl_def.max_pics:
         return &game.pics[0]
     if game.pic_ok[(usize)chunk] == 0:
-        game.pics[(usize)chunk] = game.graph.cache_gr_chunk(chunk) catch failure:
-            discard(failure)
-            recover id_graph.Pic()
+        game.pics[(usize)chunk] = game.graph.cache_gr_chunk(chunk) else id_graph.Pic()
         game.pic_ok[(usize)chunk] = 1
     return &game.pics[(usize)chunk]
 

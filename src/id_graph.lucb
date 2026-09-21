@@ -150,8 +150,7 @@ func deplane(source: u8[], width: i64, height: i64):
     let size = (usize)(width * height)
     if source.length < size:
         return
-    var temp = alloc u8[size] in memory.heap catch failure:
-        discard(failure)
+    var temp = alloc u8[size] in memory.heap catch:
         return
     defer free(temp) in memory.heap
     let pwidth = width // 4

@@ -5,7 +5,6 @@ import interop
 import memory
 import ownership
 import paths
-import strings
 import ui
 from ui import Application, Widget, Theme, Command, Shortcut
 import game
@@ -77,21 +76,21 @@ struct Session:
 
     mutating func frame(elapsed: f64) -> interop.Outcome[unit]:
         self.view.value().tick(elapsed) catch failure:
-            return fail_unit(failure.code, failure.message)
+            return interop.failure_unit(failure.code, failure.message)
         if self.view.value().wants_quit():
             self.app.value().stop()
-        return ok_unit()
+        return interop.success_unit()
 
     mutating func quit(unused: unit) -> interop.Outcome[unit]:
         discard(unused)
         self.app.value().stop()
-        return ok_unit()
+        return interop.success_unit()
 
     mutating func toggle_fullscreen(unused: unit) -> interop.Outcome[unit]:
         discard(unused)
         self.app.value().set_fullscreen(not self.app.value().is_fullscreen()) catch failure:
-            return fail_unit(failure.code, failure.message)
-        return ok_unit()
+            return interop.failure_unit(failure.code, failure.message)
+        return interop.success_unit()
 
     mutating func close():
         self.app.release()
@@ -115,27 +114,18 @@ func open_view(exe: str) -> interop.Reference[game.GameView]!:
         return view
     if exe.length > 0:
         let dir = paths.directory(exe)
-        let head = try paths.join(dir, "MAPHEAD.WL1")
-        defer strings.release(head)
-        let maps = try paths.join(dir, "GAMEMAPS.WL1")
-        defer strings.release(maps)
-        let vswap = try paths.join(dir, "VSWAP.WL1")
-        defer strings.release(vswap)
-        let beside = try_view(head, maps, vswap)
-        if let view = beside:
+        var head_buf: u8[512] = ---
+        var maps_buf: u8[512] = ---
+        var vswap_buf: u8[512] = ---
+        let head = paths.join_into(head_buf[0..], dir, "MAPHEAD.WL1")
+        let maps = paths.join_into(maps_buf[0..], dir, "GAMEMAPS.WL1")
+        let vswap = paths.join_into(vswap_buf[0..], dir, "VSWAP.WL1")
+        if let view = try_view(head, maps, vswap):
             return view
     error(ui.invalid, "could not open MAPHEAD.WL1 / GAMEMAPS.WL1 / VSWAP.WL1")
 
 func try_view(head: str, maps: str, vswap: str) -> interop.Reference[game.GameView]?:
     return interop.Reference[game.GameView].adopt(
-        new game.GameView(head, maps, vswap) in memory.heap, game.game_view_type, memory.heap) catch failure:
-        discard(failure)
+        new game.GameView(head, maps, vswap) in memory.heap, game.game_view_type, memory.heap) catch:
         recover none
 
-func ok_unit() -> interop.Outcome[unit]:
-    return interop.Outcome[unit].success(interop.Owned[unit](()))
-
-func fail_unit(code: ErrorCode, message: str) -> interop.Outcome[unit]:
-    let text = interop.copy_text(message) catch exhausted:
-        return interop.Outcome[unit].failure(memory.exhausted, interop.Owned[str]("out of memory copying a UI error"))
-    return interop.Outcome[unit].failure(code, text)

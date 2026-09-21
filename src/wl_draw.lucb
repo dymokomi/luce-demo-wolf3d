@@ -570,9 +570,7 @@ func finish_post(game: Game*, r: Refresh*, vertical: bool, intercept: i64, pic: 
 func scale_post(game: Game*, r: Refresh*):
     if r.postwidth <= 0 or r.postx < 0:
         return
-    let page = game.pages.wall(r.postpic) catch failure:
-        discard(failure)
-        return
+    let page = game.pages.wall(r.postpic) else return
     var ywcount = r.wallheight[(usize)r.postx] >> 3
     var yd = ywcount
     if yd <= 0:
@@ -745,9 +743,7 @@ func scale_shape(game: Game*, r: Refresh*, xcenter: i64, shapenum: i64, height: 
     let scale = height >> 3
     if scale <= 0:
         return
-    let linesrc = game.pages.sprite(shapenum) catch failure:
-        discard(failure)
-        return
+    let linesrc = game.pages.sprite(shapenum) else return
     if linesrc.length < 8:
         return
     var leftpix = (i64)wl_def.u16le(linesrc, 0)
@@ -855,9 +851,7 @@ func simple_scale_shape(game: Game*, r: Refresh*, xcenter: i64, shapenum: i64, h
     let scale = height >> 1
     if scale <= 0:
         return
-    let linesrc = game.pages.sprite(shapenum) catch failure:
-        discard(failure)
-        return
+    let linesrc = game.pages.sprite(shapenum) else return
     if linesrc.length < 8:
         return
     var leftpix = (i64)wl_def.u16le(linesrc, 0)
@@ -1045,6 +1039,26 @@ pub func measure_text(font: id_graph.Pic*, text: const u8[]) -> i64:
         w += font_width(font, (i64)text[i])
         i += 1
     return w
+
+## WL_MENU.C Message() string size: max line width (last line +10) and stacked font height.
+pub func measure_message(font: id_graph.Pic*, text: const u8[]) -> (i64, i64):
+    var h = font_height(font)
+    var w: i64 = 0
+    var mw: i64 = 0
+    var i: usize = 0
+    while i < text.length:
+        let ch = (i64)text[i]
+        if ch == 10:
+            if w > mw:
+                mw = w
+            w = 0
+            h += font_height(font)
+        else:
+            w += font_width(font, ch)
+        i += 1
+    if w + 10 > mw:
+        mw = w + 10
+    return (mw, h)
 
 func vwb_draw_pic(r: Refresh*, x: i64, y: i64, pic: id_graph.Pic*):
     if pic.pixels.length == 0 or pic.width <= 0 or pic.height <= 0:
