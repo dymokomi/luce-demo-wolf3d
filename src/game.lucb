@@ -100,7 +100,7 @@ pub struct GameView: Widget:
         self.buttons.pause = false
         self.box.value().invalidate()
 
-    func paint(target: interop.View[gpu.RenderTarget]) -> !:
+    mutating func paint(target: interop.View[gpu.RenderTarget]) -> !:
         var painter = try Painter(target)
         defer painter.close()
         let size = try target.get().size()
