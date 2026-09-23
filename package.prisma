@@ -1,7 +1,7 @@
 #prisma 4.0
 def package "luce-demo-wolf3d" {
     str owner = "dymokomi"
-    str version = "0.1.3"
+    str version = "0.1.4"
     str kind = "application"
     str language = "luce-base"
     str description = "A Luce Base rewrite of id Software's open-sourced Wolfenstein 3D (1992), presented through luce-ui. It loads the original shareware data files — the same VSWAP, GAMEMAPS and MAPHEAD the DOS exe used — and follows the original modules:"
@@ -23,5 +23,23 @@ def package "luce-demo-wolf3d" {
         str owner = "dymokomi"
         str version = "^0.1.0"
         str path = "../luce-audio"
+    }
+
+    def dependency "luce-std" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-std"
+    }
+
+    def dependency "luce-gpu" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-gpu"
+    }
+
+    def dependency "luce-window" {
+        str owner = "dymokomi"
+        str version = "^0.1.0"
+        str path = "../luce-window"
     }
 }
