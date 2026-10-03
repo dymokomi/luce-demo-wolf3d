@@ -1,6 +1,6 @@
 ## ID_CA.C / ID_VL.C graphics: VGAHEAD + Huffman + VL_DePlaneVGA.
 import c
-import luce_std.files
+from luce_std import files
 import memory
 import wl_def
 

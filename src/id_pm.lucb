@@ -1,6 +1,6 @@
 ## Page manager from WOLFSRC/ID_PM.C: the VSWAP wall, sprite and sound pages.
 import c
-import luce_std.files
+from luce_std import files
 import memory
 import wl_def
 

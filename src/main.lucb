@@ -1,11 +1,11 @@
 ## Entry: luce-ui Application in game mode, original Wolf3D shareware data.
-import luce_gpu.gpu
-import luce_window.input
+from luce_gpu import gpu
+from luce_window import input
 import interop
 import memory
 import ownership
-import luce_std.paths
-import luce_ui.ui
+from luce_std import paths
+from luce_ui import ui
 from luce_ui.ui import Application, Widget, Theme, Command, Shortcut
 import game
 

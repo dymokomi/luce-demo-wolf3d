@@ -1,10 +1,10 @@
 ## luce-ui widget hosting the Wolf3D play loop.
-import luce_gpu.gpu
-import luce_window.input
+from luce_gpu import gpu
+from luce_window import input
 import interop
 import memory
 import ownership
-import luce_ui.ui
+from luce_ui import ui
 from luce_ui.ui import Widget, Layout, Size, Constraints, Event, Painter, Raster, Font
 import wl_def
 import wl_play

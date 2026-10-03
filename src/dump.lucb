@@ -1,4 +1,4 @@
-import luce_ui.ui
+from luce_ui import ui
 from luce_ui.ui import Raster
 import wl_def
 import wl_game

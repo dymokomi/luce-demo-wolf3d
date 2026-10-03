@@ -1,14 +1,13 @@
 ## 3D refresh from WOLFSRC/WL_DRAW.C and the C translation of AsmRefresh in Wolf4SDL.
 import c
-import luce_std.files
-import luce_std.math
+from luce_std import files, math
 import pal
 import wl_def
 import wl_types
 import id_graph
 from wl_types import Game, Actor
-import luce_ui.ui
-import luce_gpu.gpu
+from luce_ui import ui
+from luce_gpu import gpu
 
 pub struct Refresh:
     var fine: i64[900]

@@ -1,6 +1,6 @@
 ## ID_CA.C audio: AUDIOHED offsets + AUDIOT hunks (AdLib IMF music).
 import c
-import luce_std.files
+from luce_std import files
 import memory
 import wl_def
 
