@@ -1,5 +1,5 @@
 ## Tile movement, sight, NewState — WOLFSRC/WL_STATE.C.
-import math
+import luce_std.math
 import wl_def
 import wl_act1
 import wl_types

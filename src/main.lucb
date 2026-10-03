@@ -1,12 +1,12 @@
 ## Entry: luce-ui Application in game mode, original Wolf3D shareware data.
-import gpu
-import input
+import luce_gpu.gpu
+import luce_window.input
 import interop
 import memory
 import ownership
-import paths
-import ui
-from ui import Application, Widget, Theme, Command, Shortcut
+import luce_std.paths
+import luce_ui.ui
+from luce_ui.ui import Application, Widget, Theme, Command, Shortcut
 import game
 
 pub func main(arguments: str[]) -> i32!:

@@ -4,7 +4,7 @@ import memory
 import wl_def
 import id_pm
 import id_audio
-from audio import Player, render_imf
+from luce_audio.audio import Player, render_imf
 
 pub let orig_rate: i64 = 7042
 pub let play_rate: i64 = 22050

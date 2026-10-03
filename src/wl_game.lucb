@@ -1,5 +1,5 @@
 ## Level setup, spawn scan, new game — WOLFSRC/WL_GAME.C / WL_MAIN.C.
-import paths
+import luce_std.paths
 import wl_def
 import wl_types
 import wl_act1

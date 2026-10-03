@@ -1,6 +1,6 @@
 ## Shared game objects — WOLFSRC/WL_DEF.H statetype / objtype / doorobj_t / statobj_t.
 ## Lives in its own module so id_ca/id_pm/id_sd can keep importing only wl_def constants.
-import math
+import luce_std.math
 import wl_def
 import id_ca
 import id_pm
