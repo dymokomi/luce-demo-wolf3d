@@ -1,20 +1,23 @@
 ## ID_CA.C audio: AUDIOHED offsets + AUDIOT hunks (AdLib IMF music).
 import c
 from luce_std import files
-import memory
+import interop
 import wl_def
 
 pub struct Audio:
-    var data: u8[]
+    var data: const u8[]
+    ## The file `data` is read from, released on close.
+    var file: interop.Owned[const u8[]]?
     var starts: i32[320]
     pub var count: i64
     pub var music_start: i64
 
     pub mutating func close():
-        if self.data.length > 0:
-            free(self.data) in memory.heap
+        if let file = self.file:
+            file.release()
         var empty: u8[]
         self.data = empty
+        self.file = none
         self.count = 0
 
     pub func chunk(index: i64) -> const u8[]:
@@ -30,11 +33,14 @@ pub struct Audio:
         return self.data[(usize)a..<end]
 
 pub func load_audio(head_path: str, data_path: str) -> Audio!:
-    let head = try files.read((c.str)head_path)
-    defer free(head) in memory.heap
+    let head_file = try files.read((c.str)head_path)
+    defer head_file.release()
+    let head = head_file.value
     var audio = Audio()
-    audio.data = try files.read((c.str)data_path)
-    errdefer free(audio.data) in memory.heap
+    let file = try files.read((c.str)data_path)
+    audio.file = file
+    audio.data = file.value
+    errdefer audio.close()
     let n = (i64)head.length // 4
     if n < 2:
         error(wl_def.invalid, "AUDIOHED is truncated")

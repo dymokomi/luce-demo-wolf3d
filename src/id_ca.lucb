@@ -1,6 +1,7 @@
 ## Caching manager from WOLFSRC/ID_CA.C: Carmack expand, RLEW, GAMEMAPS.
 import c
 from luce_std import files
+import interop
 import memory
 import wl_def
 
@@ -13,15 +14,18 @@ pub struct MapHeader:
 pub struct Maps:
     var rlew_tag: u16
     var headers: MapHeader[60]
-    var raw: u8[]
+    var raw: const u8[]
+    ## The file `raw` is read from, released on close.
+    var raw_file: interop.Owned[const u8[]]?
     pub var walls: u16[4096]
     pub var info: u16[4096]
 
     pub mutating func close():
-        if self.raw.length > 0:
-            free(self.raw) in memory.heap
+        if let file = self.raw_file:
+            file.release()
         var empty: u8[]
         self.raw = empty
+        self.raw_file = none
 
 pub func carmack_expand(source: const u8[], dest: u16[], expanded_bytes: i64) -> !:
     var in_off: usize = 0
@@ -113,13 +117,17 @@ pub func rlew_expand(source: const u16[], dest: u16[], expanded_bytes: i64, tag:
                 n += 1
 
 pub func load_maps(head_path: str, maps_path: str) -> Maps!:
-    let head = try files.read((c.str)head_path)
-    defer free(head) in memory.heap
+    let head_file = try files.read((c.str)head_path)
+    defer head_file.release()
+    let head = head_file.value
     if head.length < 6:
         error(wl_def.invalid, "MAPHEAD is truncated")
     var maps = Maps()
     maps.rlew_tag = wl_def.u16le(head, 0)
-    maps.raw = try files.read((c.str)maps_path)
+    let raw = try files.read((c.str)maps_path)
+    maps.raw_file = raw
+    maps.raw = raw.value
+    errdefer maps.close()
     var i: i64 = 0
     while i < 60:
         let off = 2 + i * 4

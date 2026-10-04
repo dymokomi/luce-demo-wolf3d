@@ -1,6 +1,7 @@
 ## ID_CA.C / ID_VL.C graphics: VGAHEAD + Huffman + VL_DePlaneVGA.
 import c
 from luce_std import files
+import interop
 import memory
 import wl_def
 
@@ -18,18 +19,19 @@ pub struct Pic:
         self.height = 0
 
 pub struct Graph:
-    var head: u8[]
-    var data: u8[]
-    var dict: u8[]
+    var head: const u8[]
+    var data: const u8[]
+    var dict: const u8[]
     var pictable: u8[]
+    ## The files `head`, `data` and `dict` are read from, released on close.
+    var head_file: interop.Owned[const u8[]]?
+    var data_file: interop.Owned[const u8[]]?
+    var dict_file: interop.Owned[const u8[]]?
 
     pub mutating func close():
-        if self.head.length > 0:
-            free(self.head) in memory.heap
-        if self.data.length > 0:
-            free(self.data) in memory.heap
-        if self.dict.length > 0:
-            free(self.dict) in memory.heap
+        for file in [self.head_file, self.data_file, self.dict_file]:
+            if let owned = file:
+                owned.release()
         if self.pictable.length > 0:
             free(self.pictable) in memory.heap
         var empty: u8[]
@@ -37,6 +39,9 @@ pub struct Graph:
         self.data = empty
         self.dict = empty
         self.pictable = empty
+        self.head_file = none
+        self.data_file = none
+        self.dict_file = none
 
     ## CA_CacheGrChunk + CAL_DeplaneGrChunk
     pub func cache_gr_chunk(chunk: i64) -> Pic!:
@@ -60,12 +65,16 @@ pub struct Graph:
 
 pub func load_graph(head_path: str, graph_path: str, dict_path: str) -> Graph!:
     var graph = Graph()
-    graph.head = try files.read((c.str)head_path)
-    errdefer free(graph.head) in memory.heap
-    graph.data = try files.read((c.str)graph_path)
-    errdefer free(graph.data) in memory.heap
-    graph.dict = try files.read((c.str)dict_path)
-    errdefer free(graph.dict) in memory.heap
+    errdefer graph.close()
+    let head = try files.read((c.str)head_path)
+    graph.head_file = head
+    graph.head = head.value
+    let data = try files.read((c.str)graph_path)
+    graph.data_file = data
+    graph.data = data.value
+    let dict = try files.read((c.str)dict_path)
+    graph.dict_file = dict
+    graph.dict = dict.value
     if graph.dict.length < 1024 or graph.head.length < 6:
         error(wl_def.invalid, "VGAGRAPH headers are truncated")
     let raw = chunk_bytes(graph.head, graph.data, (usize)wl_def.struct_pic)

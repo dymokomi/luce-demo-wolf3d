@@ -1,6 +1,7 @@
 ## Page manager from WOLFSRC/ID_PM.C: the VSWAP wall, sprite and sound pages.
 import c
 from luce_std import files
+import interop
 import memory
 import wl_def
 
@@ -8,13 +9,15 @@ pub struct Pages:
     pub var chunks: u16
     pub var sprite_start: u16
     pub var sound_start: u16
-    var data: u8[]
+    var data: const u8[]
+    ## The file `data` is read from, released on close.
+    var file: interop.Owned[const u8[]]?
     var offsets: u32[]
     var lengths: u16[]
 
     pub mutating func close():
-        if self.data.length > 0:
-            free(self.data) in memory.heap
+        if let file = self.file:
+            file.release()
         if self.offsets.length > 0:
             free(self.offsets) in memory.heap
         if self.lengths.length > 0:
@@ -23,6 +26,7 @@ pub struct Pages:
         var empty_u32: u32[]
         var empty_u16: u16[]
         self.data = empty_u8
+        self.file = none
         self.offsets = empty_u32
         self.lengths = empty_u16
 
@@ -68,8 +72,9 @@ pub struct Pages:
         return self.data[a..<b]
 
 pub func load_vswap(path: str) -> Pages!:
-    let raw = try files.read((c.str)path)
-    errdefer free(raw) in memory.heap
+    let file = try files.read((c.str)path)
+    errdefer file.release()
+    let raw = file.value
     if raw.length < 6:
         error(wl_def.invalid, "VSWAP is truncated")
     var pages = Pages()
@@ -95,4 +100,5 @@ pub func load_vswap(path: str) -> Pages!:
     pages.offsets = offs
     pages.lengths = lens
     pages.data = raw
+    pages.file = file
     return pages
