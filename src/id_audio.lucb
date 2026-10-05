@@ -12,7 +12,7 @@ pub struct Audio:
     pub var count: i64
     pub var music_start: i64
 
-    pub mutating func close():
+    pub func close():
         if let file = self.file:
             file.release()
         var empty: u8[]

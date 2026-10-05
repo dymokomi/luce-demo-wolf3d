@@ -49,7 +49,7 @@ func load_audio_near(game: Game*, head_path: str):
         return
     if try_audio(game, "AUDIOHED.WL1", "AUDIOT.WL1"):
         return
-    discard(try_audio(game, "data/AUDIOHED.WL1", "data/AUDIOT.WL1"))
+    _ = try_audio(game, "data/AUDIOHED.WL1", "data/AUDIOT.WL1")
 
 func try_audio(game: Game*, head: str, data: str) -> bool:
     return load_audio_files(game, head, data) else false
@@ -67,7 +67,7 @@ func load_graph_near(game: Game*, head_path: str):
         return
     if try_graph(game, "VGAHEAD.WL1", "VGAGRAPH.WL1", "VGADICT.WL1"):
         return
-    discard(try_graph(game, "data/VGAHEAD.WL1", "data/VGAGRAPH.WL1", "data/VGADICT.WL1"))
+    _ = try_graph(game, "data/VGAHEAD.WL1", "data/VGAGRAPH.WL1", "data/VGADICT.WL1")
 
 func try_graph(game: Game*, head: str, graph_path: str, dict: str) -> bool:
     return load_latch_pics(game, head, graph_path, dict) else false

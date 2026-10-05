@@ -35,7 +35,7 @@ pub func main(arguments: str[]) -> i32!:
     let theme = Theme(background = gpu.Color(), foreground = gpu.Color(0.95, 0.85, 0.35))
     let app = try interop.Reference[Application].adopt(
         new Application(widget, title = "Wolfenstein 3D", width = 960, height = 600,
-            theme = theme, game = true, fps = 70.0, fullscreen = fullscreen) in memory.heap,
+                        theme = theme, game = true, fps = 70.0, fullscreen = fullscreen) in memory.heap,
         ui.application_type, memory.heap)
     defer app.release()
     let session = try interop.Reference[Session].adopt(new Session(app, view) in memory.heap, session_type, memory.heap)
@@ -74,25 +74,25 @@ struct Session:
         self.app = app.clone()
         self.view = view.clone()
 
-    mutating func frame(elapsed: f64) -> interop.Outcome[unit]:
+    func frame(elapsed: f64) -> interop.Outcome[unit]:
         self.view.value().tick(elapsed) catch failure:
             return interop.failure_unit(failure.code, failure.message)
         if self.view.value().wants_quit():
             self.app.value().stop()
         return interop.success_unit()
 
-    mutating func quit(unused: unit) -> interop.Outcome[unit]:
-        discard(unused)
+    func quit(unused: unit) -> interop.Outcome[unit]:
+        _ = unused
         self.app.value().stop()
         return interop.success_unit()
 
-    mutating func toggle_fullscreen(unused: unit) -> interop.Outcome[unit]:
-        discard(unused)
+    func toggle_fullscreen(unused: unit) -> interop.Outcome[unit]:
+        _ = unused
         self.app.value().set_fullscreen(not self.app.value().is_fullscreen()) catch failure:
             return interop.failure_unit(failure.code, failure.message)
         return interop.success_unit()
 
-    mutating func close():
+    func close():
         self.app.release()
         self.view.release()
 
@@ -128,4 +128,3 @@ func try_view(head: str, maps: str, vswap: str) -> interop.Reference[game.GameVi
     return interop.Reference[game.GameView].adopt(
         new game.GameView(head, maps, vswap) in memory.heap, game.game_view_type, memory.heap) catch:
         recover none
-

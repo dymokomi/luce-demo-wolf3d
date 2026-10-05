@@ -21,7 +21,7 @@ pub struct Mixer:
     var song: i64
     var song_pcm: u8[]
 
-    pub mutating func close():
+    pub func close():
         self.player.close()
         if self.blob.length > 0:
             free(self.blob) in memory.heap
@@ -65,7 +65,7 @@ func finish_mixer(pages: id_pm.Pages*, mix: Mixer) -> Mixer!:
         i += 1
     if total <= 0:
         return mix
-    var blob = try alloc u8[(usize)total] in memory.heap
+    var blob = try new u8[(usize)total] --- in memory.heap
     errdefer free(blob) in memory.heap
     var cursor: i64 = 0
     i = 0
@@ -74,7 +74,7 @@ func finish_mixer(pages: id_pm.Pages*, mix: Mixer) -> Mixer!:
         out.start[(usize)i] = cursor
         if size > 0:
             let dest = dest_samples(size)
-            var raw = try alloc u8[(usize)size] in memory.heap
+            var raw = try new u8[(usize)size] --- in memory.heap
             copy_digi(raw, 0, pages, page_start[(usize)i], size)
             resample16(blob, cursor, raw, size, dest)
             free(raw) in memory.heap

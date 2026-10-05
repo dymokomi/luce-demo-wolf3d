@@ -15,7 +15,7 @@ pub struct Pages:
     var offsets: u32[]
     var lengths: u16[]
 
-    pub mutating func close():
+    pub func close():
         if let file = self.file:
             file.release()
         if self.offsets.length > 0:
@@ -84,9 +84,9 @@ pub func load_vswap(path: str) -> Pages!:
     let count = (usize)pages.chunks
     if raw.length < 6 + count * 4 + count * 2:
         error(wl_def.invalid, "VSWAP header is truncated")
-    let offs = try alloc u32[count] in memory.heap
+    let offs = try new u32[count] --- in memory.heap
     errdefer free(offs) in memory.heap
-    let lens = try alloc u16[count] in memory.heap
+    let lens = try new u16[count] --- in memory.heap
     errdefer free(lens) in memory.heap
     var i: usize = 0
     while i < count:

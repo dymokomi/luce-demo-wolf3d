@@ -128,7 +128,7 @@ func tick_attract(game: Game*, buttons: Buttons, next: i64, wait: i64):
             go_attract(game, next)
 
 func main_count(game: Game*) -> i64:
-    discard(game)
+    _ = game
     return 10
 
 func main_active(game: Game*, i: i64) -> bool:
@@ -170,7 +170,7 @@ func move_cur(game: Game*, n: i64, dir: i64):
             id_sd.play(&game.mixer, wl_def.snd_machine)
             return
         steps += 1
-    discard(dir)
+    _ = dir
 
 func pick_main(game: Game*):
     let which = game.menu_cur

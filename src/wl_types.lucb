@@ -162,7 +162,7 @@ pub struct Game:
     pub var playstate: i64
     pub var dead_tics: i64
 
-    pub mutating func close():
+    pub func close():
         self.maps.close()
         self.pages.close()
         self.statusbar.close()

@@ -10,7 +10,7 @@ pub struct Pic:
     pub var width: i64
     pub var height: i64
 
-    pub mutating func close():
+    pub func close():
         if self.pixels.length > 0:
             free(self.pixels) in memory.heap
         var empty: u8[]
@@ -28,7 +28,7 @@ pub struct Graph:
     var data_file: interop.Owned[const u8[]]?
     var dict_file: interop.Owned[const u8[]]?
 
-    pub mutating func close():
+    pub func close():
         for file in [self.head_file, self.data_file, self.dict_file]:
             if let owned = file:
                 owned.release()
@@ -123,7 +123,7 @@ func offset3(head: const u8[], i: usize) -> i32:
     return v
 
 func huff_expand(source: const u8[], dict: const u8[], length: i64) -> u8[]!:
-    var dest = try alloc u8[(usize)length] in memory.heap
+    var dest = try new u8[(usize)length] --- in memory.heap
     errdefer free(dest) in memory.heap
     if source.length == 0:
         error(wl_def.invalid, "empty Huffman chunk")
@@ -159,7 +159,7 @@ func deplane(source: u8[], width: i64, height: i64):
     let size = (usize)(width * height)
     if source.length < size:
         return
-    var temp = alloc u8[size] in memory.heap catch:
+    var temp = new u8[size] --- in memory.heap catch:
         return
     defer free(temp) in memory.heap
     let pwidth = width // 4

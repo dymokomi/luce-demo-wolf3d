@@ -558,8 +558,8 @@ func hit_horiz_pwall(game: Game*, r: Refresh*) -> bool:
     return true
 
 func finish_post(game: Game*, r: Refresh*, vertical: bool, intercept: i64, pic: i64, texture: i64):
-    discard(vertical)
-    discard(intercept)
+    _ = vertical
+    _ = intercept
     r.postx = r.pixx
     r.postwidth = 1
     r.postpic = pic
@@ -677,7 +677,7 @@ func project_tile(r: Refresh*, tilex: i64, tiley: i64) -> Vis:
     if nx < wl_def.min_dist:
         return Vis()
     return Vis(viewx = wl_def.view_width // 2 + ny * r.scale // nx,
-        viewheight = r.heightnumerator // (nx >> 8))
+               viewheight = r.heightnumerator // (nx >> 8))
 
 func tile_spotted(game: Game*, tilex: i64, tiley: i64) -> bool:
     var dx: i64 = -1
@@ -736,7 +736,7 @@ func draw_sprite(game: Game*, r: Refresh*, tilex: i64, tiley: i64, shapenum: i64
     let height = r.heightnumerator // (nx >> 8)
     let viewx = wl_def.view_width // 2 + nx2 * r.scale // nx
     scale_shape(game, r, viewx, shapenum, height)
-    discard(tile_center)
+    _ = tile_center
 
 func scale_shape(game: Game*, r: Refresh*, xcenter: i64, shapenum: i64, height: i64):
     let scale = height >> 3

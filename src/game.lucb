@@ -46,15 +46,15 @@ pub struct GameView: Widget:
         return self.box.clone()
 
     pub func measure(available: Constraints) -> interop.Outcome[Size]:
-        discard(available)
+        _ = available
         return interop.Outcome[Size].success(interop.Owned[Size](Size()))
 
-    pub mutating func draw(target: interop.View[gpu.RenderTarget]) -> interop.Outcome[unit]:
+    pub func draw(target: interop.View[gpu.RenderTarget]) -> interop.Outcome[unit]:
         self.paint(target) catch failure:
             return fail_unit(failure.code, failure.message)
         return ok_unit()
 
-    pub mutating func event(event: Event) -> interop.Outcome[unit]:
+    pub func event(event: Event) -> interop.Outcome[unit]:
         if event.cancelled:
             self.buttons = Buttons()
             return ok_unit()
@@ -74,7 +74,7 @@ pub struct GameView: Widget:
             self.buttons.attack = false
         return ok_unit()
 
-    pub mutating func tick(elapsed: f64) -> !:
+    pub func tick(elapsed: f64) -> !:
         if self.game.mode == wl_def.mode_game:
             if self.buttons.escape_edge:
                 self.game.mode = wl_def.mode_menu
@@ -98,16 +98,16 @@ pub struct GameView: Widget:
         self.buttons.escape_edge = false
         self.buttons.any_key = false
         self.buttons.pause = false
-        self.box.value().invalidate()
+        Layout.invalidate()
 
-    mutating func paint(target: interop.View[gpu.RenderTarget]) -> !:
+    func paint(target: interop.View[gpu.RenderTarget]) -> !:
         var painter = try Painter(target)
         defer painter.close()
         let size = try target.get().size()
         try painter.rectangle(gpu.Rect(width = size.width, height = size.height), gpu.Color())
         try self.raster.draw(target, gpu.Rect(width = size.width, height = size.height))
 
-    pub mutating func close():
+    pub func close():
         self.game.close()
         self.font.release()
         self.raster.close()

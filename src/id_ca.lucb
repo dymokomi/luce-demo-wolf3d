@@ -20,7 +20,7 @@ pub struct Maps:
     pub var walls: u16[4096]
     pub var info: u16[4096]
 
-    pub mutating func close():
+    pub func close():
         if let file = self.raw_file:
             file.release()
         var empty: u8[]
@@ -171,7 +171,7 @@ func expand_plane(maps: Maps*, start: i32, length: u16, dest: u16[]) -> !:
     if chunk.length < 2:
         error(wl_def.invalid, "map plane is truncated")
     let expanded = (i64)wl_def.u16le(chunk, 0)
-    var carmack = try alloc u16[(usize)(expanded // 2)] in memory.heap
+    var carmack = try new u16[(usize)(expanded // 2)] --- in memory.heap
     defer free(carmack) in memory.heap
     try carmack_expand(chunk[2..<chunk.length], carmack, expanded)
     try rlew_expand(carmack[1..<carmack.length], dest, wl_def.map_area * 2, maps.rlew_tag)

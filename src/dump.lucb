@@ -9,7 +9,7 @@ import id_sd
 from wl_types import Buttons
 
 pub func main(arguments: str[]) -> i32!:
-    discard(arguments)
+    _ = arguments
     var game = try wl_game.load_game("data/MAPHEAD.WL1", "data/GAMEMAPS.WL1", "data/VSWAP.WL1")
     defer game.close()
     print(f"spawn {game.player.tilex},{game.player.tiley} angle {game.player.angle} doors {game.door_count}")
