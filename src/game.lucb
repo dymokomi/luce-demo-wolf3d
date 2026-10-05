@@ -98,7 +98,7 @@ pub struct GameView: Widget:
         self.buttons.escape_edge = false
         self.buttons.any_key = false
         self.buttons.pause = false
-        Layout.invalidate()
+        self.box.value().invalidate()
 
     func paint(target: interop.View[gpu.RenderTarget]) -> !:
         var painter = try Painter(target)
