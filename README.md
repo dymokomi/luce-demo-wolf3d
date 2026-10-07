@@ -54,5 +54,5 @@ Still to port from the original: demo playback, registered six-episode `*.WL6` b
 ## Tests
 
 ```sh
-./test.sh
+luc test
 ```
